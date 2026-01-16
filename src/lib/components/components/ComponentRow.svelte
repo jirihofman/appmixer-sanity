@@ -6,8 +6,12 @@
 
   let { component, onStatusChange } = $props();
 
-  let githubIssue = $state(component.github_issue || '');
+  let githubIssue = $state('');
   let isUpdating = $state(false);
+
+  $effect(() => {
+    githubIssue = component.github_issue || '';
+  });
 
   async function setStatus(status) {
     isUpdating = true;

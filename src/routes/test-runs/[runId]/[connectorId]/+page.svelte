@@ -11,8 +11,12 @@
   let { data } = $props();
 
   let showBlockedDialog = $state(false);
-  let blockedReason = $state(data.connector.blocked_reason || '');
+  let blockedReason = $state('');
   let isUpdating = $state(false);
+
+  $effect(() => {
+    blockedReason = data.connector.blocked_reason || '';
+  });
 
   const testedCount = $derived(
     data.components.filter((c) => c.status !== 'pending').length

@@ -61,6 +61,17 @@ const filtered = $derived(data.filter(...)); // Computed
 let count = $state(0);                       // Mutable state
 ```
 
+**Important:** When initializing `$state()` from props, don't reference props directly in the initializer—it only captures the initial value. Use `$effect()` to sync:
+
+```javascript
+// Wrong - only captures initial value, build will warn
+let value = $state(data.field || '');
+
+// Correct - syncs when props change
+let value = $state('');
+$effect(() => { value = data.field || ''; });
+```
+
 Use `invalidateAll()` after mutations to refetch data.
 
 ### Status Logic
