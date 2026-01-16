@@ -4,18 +4,18 @@ import { getConnectorById } from '$lib/db/connectors.js';
 import { getComponentsByConnector } from '$lib/db/components.js';
 
 /** @type {import('./$types').PageServerLoad} */
-export function load({ params }) {
-  const testRun = getTestRunById(params.runId);
+export async function load({ params }) {
+  const testRun = await getTestRunById(params.runId);
   if (!testRun) {
     throw error(404, 'Test run not found');
   }
 
-  const connector = getConnectorById(params.connectorId);
+  const connector = await getConnectorById(params.connectorId);
   if (!connector) {
     throw error(404, 'Connector not found');
   }
 
-  const components = getComponentsByConnector(params.connectorId);
+  const components = await getComponentsByConnector(params.connectorId);
 
   return {
     testRun,

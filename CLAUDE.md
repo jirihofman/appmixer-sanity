@@ -18,9 +18,15 @@ pnpm run lint         # Check code formatting with Prettier
 pnpm run format       # Format code with Prettier
 ```
 
+## Environment Variables
+
+Required (see `.env.example`):
+- `TURSO_DATABASE_URL` - Turso database URL (e.g., `libsql://your-db.turso.io`)
+- `TURSO_AUTH_TOKEN` - Turso authentication token
+
 ## Architecture
 
-**Stack:** SvelteKit 2.0, Svelte 5, SQLite (better-sqlite3), Tailwind CSS, Bits UI
+**Stack:** SvelteKit 2.0, Svelte 5, Turso (libSQL), Tailwind CSS, Bits UI
 
 ### Data Flow
 
@@ -39,7 +45,7 @@ test_runs → connectors → components (cascade delete)
 - `connectors`: test_run_id, connector_name, version, label, status (pending|ok|fail|blocked), blocked_reason
 - `components`: connector_id, component_name, status (pending|ok|fail), github_issue, tested_at
 
-Database file: `data/sanity-check.db` (auto-created on first run)
+Database: Turso (serverless SQLite). Schema initialized via `src/hooks.server.js` on startup.
 
 ### Key Directories
 

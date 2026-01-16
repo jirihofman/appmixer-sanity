@@ -11,7 +11,7 @@ export async function PATCH({ params, request }) {
       return json({ error: 'Invalid status' }, { status: 400 });
     }
 
-    const connector = getConnectorById(id);
+    const connector = await getConnectorById(id);
     if (!connector) {
       return json({ error: 'Connector not found' }, { status: 404 });
     }
@@ -21,7 +21,7 @@ export async function PATCH({ params, request }) {
       return json({ error: 'Blocked reason is required' }, { status: 400 });
     }
 
-    updateConnectorStatus(id, status, status === 'blocked' ? blockedReason : null);
+    await updateConnectorStatus(id, status, status === 'blocked' ? blockedReason : null);
 
     return json({ success: true });
   } catch (error) {

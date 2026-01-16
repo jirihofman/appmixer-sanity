@@ -3,14 +3,14 @@ import { getTestRunById } from '$lib/db/test-runs.js';
 import { getConnectorsByTestRun } from '$lib/db/connectors.js';
 
 /** @type {import('./$types').PageServerLoad} */
-export function load({ params }) {
-  const testRun = getTestRunById(params.runId);
+export async function load({ params }) {
+  const testRun = await getTestRunById(params.runId);
 
   if (!testRun) {
     throw error(404, 'Test run not found');
   }
 
-  const connectors = getConnectorsByTestRun(params.runId);
+  const connectors = await getConnectorsByTestRun(params.runId);
 
   return {
     testRun,

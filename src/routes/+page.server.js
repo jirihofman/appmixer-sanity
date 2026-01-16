@@ -1,8 +1,8 @@
 import { getAllTestRuns } from '$lib/db/test-runs.js';
 
 /** @type {import('./$types').PageServerLoad} */
-export function load() {
-  const testRuns = getAllTestRuns();
+export async function load() {
+  const testRuns = await getAllTestRuns();
 
   return {
     testRuns

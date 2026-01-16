@@ -1,19 +1,10 @@
-import db from './index.js';
-
-/**
- * @typedef {Object} TestRun
- * @property {string} id
- * @property {string} name
- * @property {string} created_at
- * @property {'in_progress' | 'completed'} status
- */
+import { getDb } from './index.js';
 
 /**
  * Get all test runs ordered by creation date (newest first)
- * @returns {TestRun[]}
  */
-export function getAllTestRuns() {
-  return db.prepare(`
+export async function getAllTestRuns() {
+  const result = await getDb().execute(`
     SELECT
       tr.*,
       (SELECT COUNT(*) FROM connectors WHERE test_run_id = tr.id) as connector_count,
@@ -22,55 +13,56 @@ export function getAllTestRuns() {
       (SELECT COUNT(*) FROM connectors WHERE test_run_id = tr.id AND status = 'blocked') as blocked_count
     FROM test_runs tr
     ORDER BY tr.created_at DESC
-  `).all();
+  `);
+  return result.rows;
 }
 
 /**
  * Get a test run by ID
- * @param {string} id
- * @returns {TestRun | undefined}
  */
-export function getTestRunById(id) {
-  return db.prepare(`
-    SELECT
-      tr.*,
-      (SELECT COUNT(*) FROM connectors WHERE test_run_id = tr.id) as connector_count,
-      (SELECT COUNT(*) FROM connectors WHERE test_run_id = tr.id AND status = 'ok') as ok_count,
-      (SELECT COUNT(*) FROM connectors WHERE test_run_id = tr.id AND status = 'fail') as fail_count,
-      (SELECT COUNT(*) FROM connectors WHERE test_run_id = tr.id AND status = 'blocked') as blocked_count
-    FROM test_runs tr
-    WHERE tr.id = ?
-  `).get(id);
+export async function getTestRunById(id) {
+  const result = await getDb().execute({
+    sql: `
+      SELECT
+        tr.*,
+        (SELECT COUNT(*) FROM connectors WHERE test_run_id = tr.id) as connector_count,
+        (SELECT COUNT(*) FROM connectors WHERE test_run_id = tr.id AND status = 'ok') as ok_count,
+        (SELECT COUNT(*) FROM connectors WHERE test_run_id = tr.id AND status = 'fail') as fail_count,
+        (SELECT COUNT(*) FROM connectors WHERE test_run_id = tr.id AND status = 'blocked') as blocked_count
+      FROM test_runs tr
+      WHERE tr.id = ?
+    `,
+    args: [id]
+  });
+  return result.rows[0];
 }
 
 /**
  * Create a new test run
- * @param {{id: string, name: string}} data
- * @returns {Database.RunResult}
  */
-export function createTestRun({ id, name }) {
-  return db.prepare(`
-    INSERT INTO test_runs (id, name) VALUES (?, ?)
-  `).run(id, name);
+export async function createTestRun({ id, name }) {
+  return getDb().execute({
+    sql: `INSERT INTO test_runs (id, name) VALUES (?, ?)`,
+    args: [id, name]
+  });
 }
 
 /**
  * Update test run status
- * @param {string} id
- * @param {'in_progress' | 'completed'} status
- * @returns {Database.RunResult}
  */
-export function updateTestRunStatus(id, status) {
-  return db.prepare(`
-    UPDATE test_runs SET status = ? WHERE id = ?
-  `).run(status, id);
+export async function updateTestRunStatus(id, status) {
+  return getDb().execute({
+    sql: `UPDATE test_runs SET status = ? WHERE id = ?`,
+    args: [status, id]
+  });
 }
 
 /**
  * Delete a test run (cascades to connectors and components)
- * @param {string} id
- * @returns {Database.RunResult}
  */
-export function deleteTestRun(id) {
-  return db.prepare(`DELETE FROM test_runs WHERE id = ?`).run(id);
+export async function deleteTestRun(id) {
+  // Delete in order due to foreign keys (Turso may not have cascade enabled by default)
+  await getDb().execute({ sql: `DELETE FROM components WHERE connector_id IN (SELECT id FROM connectors WHERE test_run_id = ?)`, args: [id] });
+  await getDb().execute({ sql: `DELETE FROM connectors WHERE test_run_id = ?`, args: [id] });
+  return getDb().execute({ sql: `DELETE FROM test_runs WHERE id = ?`, args: [id] });
 }

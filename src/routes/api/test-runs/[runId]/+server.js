@@ -11,12 +11,12 @@ export async function PATCH({ params, request }) {
       return json({ error: 'Invalid status' }, { status: 400 });
     }
 
-    const testRun = getTestRunById(runId);
+    const testRun = await getTestRunById(runId);
     if (!testRun) {
       return json({ error: 'Test run not found' }, { status: 404 });
     }
 
-    updateTestRunStatus(runId, status);
+    await updateTestRunStatus(runId, status);
 
     return json({ success: true });
   } catch (error) {
@@ -30,12 +30,12 @@ export async function DELETE({ params }) {
   try {
     const { runId } = params;
 
-    const testRun = getTestRunById(runId);
+    const testRun = await getTestRunById(runId);
     if (!testRun) {
       return json({ error: 'Test run not found' }, { status: 404 });
     }
 
-    deleteTestRun(runId);
+    await deleteTestRun(runId);
 
     return json({ success: true });
   } catch (error) {

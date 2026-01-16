@@ -16,7 +16,7 @@ export async function POST({ request }) {
 
     // Create test run record
     const runId = nanoid();
-    createTestRun({ id: runId, name: name.trim() });
+    await createTestRun({ id: runId, name: name.trim() });
 
     // Fetch all connectors with components from external API
     const connectors = await fetchAllConnectorsWithComponents();
@@ -24,7 +24,7 @@ export async function POST({ request }) {
     // Store snapshot in database
     for (const connector of connectors) {
       const connectorId = nanoid();
-      addConnectorToRun({
+      await addConnectorToRun({
         id: connectorId,
         testRunId: runId,
         connectorName: connector.name,
@@ -47,7 +47,7 @@ export async function POST({ request }) {
           isPrivate: component.private
         }));
 
-        batchInsertComponents(componentsToInsert);
+        await batchInsertComponents(componentsToInsert);
       }
     }
 

@@ -11,7 +11,7 @@ export async function PATCH({ params, request }) {
       return json({ error: 'Invalid status' }, { status: 400 });
     }
 
-    const component = getComponentById(id);
+    const component = await getComponentById(id);
     if (!component) {
       return json({ error: 'Component not found' }, { status: 404 });
     }
@@ -24,7 +24,7 @@ export async function PATCH({ params, request }) {
       }
     }
 
-    updateComponentStatus(id, status, status === 'fail' ? (githubIssue || null) : null);
+    await updateComponentStatus(id, status, status === 'fail' ? (githubIssue || null) : null);
 
     return json({ success: true });
   } catch (error) {
