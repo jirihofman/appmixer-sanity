@@ -100,22 +100,38 @@
     </div>
     <Progress value={progress} />
     <div class="grid grid-cols-4 gap-4 text-center text-sm">
-      <div class="rounded-md bg-muted p-3">
+      <button
+        type="button"
+        onclick={() => (statusFilter = 'all')}
+        class="rounded-md bg-muted p-3 cursor-pointer hover:ring-2 hover:ring-ring transition-all {statusFilter === 'all' ? 'ring-2 ring-ring' : ''}"
+      >
         <div class="text-2xl font-bold">{data.connectors.length}</div>
         <div class="text-xs text-muted-foreground">Total</div>
-      </div>
-      <div class="rounded-md bg-green-50 p-3 text-green-700">
+      </button>
+      <button
+        type="button"
+        onclick={() => (statusFilter = 'ok')}
+        class="rounded-md bg-green-50 p-3 text-green-700 cursor-pointer hover:ring-2 hover:ring-green-500 transition-all {statusFilter === 'ok' ? 'ring-2 ring-green-500' : ''}"
+      >
         <div class="text-2xl font-bold">{data.testRun.ok_count}</div>
         <div class="text-xs">OK</div>
-      </div>
-      <div class="rounded-md bg-red-50 p-3 text-red-700">
+      </button>
+      <button
+        type="button"
+        onclick={() => (statusFilter = 'fail')}
+        class="rounded-md bg-red-50 p-3 text-red-700 cursor-pointer hover:ring-2 hover:ring-red-500 transition-all {statusFilter === 'fail' ? 'ring-2 ring-red-500' : ''}"
+      >
         <div class="text-2xl font-bold">{data.testRun.fail_count}</div>
         <div class="text-xs">Fail</div>
-      </div>
-      <div class="rounded-md bg-yellow-50 p-3 text-yellow-700">
+      </button>
+      <button
+        type="button"
+        onclick={() => (statusFilter = 'blocked')}
+        class="rounded-md bg-yellow-50 p-3 text-yellow-700 cursor-pointer hover:ring-2 hover:ring-yellow-500 transition-all {statusFilter === 'blocked' ? 'ring-2 ring-yellow-500' : ''}"
+      >
         <div class="text-2xl font-bold">{data.testRun.blocked_count}</div>
         <div class="text-xs">Blocked</div>
-      </div>
+      </button>
     </div>
   </div>
 

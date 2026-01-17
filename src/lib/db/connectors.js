@@ -71,6 +71,16 @@ export async function updateConnectorStatus(id, status, blockedReason = null) {
 }
 
 /**
+ * Update connector notes
+ */
+export async function updateConnectorNotes(id, notes) {
+  return getDb().execute({
+    sql: `UPDATE connectors SET notes = ? WHERE id = ?`,
+    args: [notes, id]
+  });
+}
+
+/**
  * Recalculate connector status based on component statuses
  */
 export async function recalculateConnectorStatus(connectorId) {

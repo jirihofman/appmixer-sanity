@@ -5,7 +5,7 @@ import { getComponentById, updateComponentStatus } from '$lib/db/components.js';
 export async function PATCH({ params, request }) {
   try {
     const { id } = params;
-    const { status, githubIssue } = await request.json();
+    const { status, githubIssues } = await request.json();
 
     if (!status || !['pending', 'ok', 'fail'].includes(status)) {
       return json({ error: 'Invalid status' }, { status: 400 });
@@ -16,15 +16,24 @@ export async function PATCH({ params, request }) {
       return json({ error: 'Component not found' }, { status: 404 });
     }
 
-    // If setting to fail, github issue is optional but validated if provided
-    if (githubIssue && typeof githubIssue === 'string') {
-      const githubPattern = /^https:\/\/github\.com\/[\w-]+\/[\w-]+\/issues\/\d+$/;
-      if (!githubPattern.test(githubIssue)) {
-        return json({ error: 'Invalid GitHub issue URL format' }, { status: 400 });
+    // Validate GitHub issues array if provided
+    const githubPattern = /^https:\/\/github\.com\/[\w-]+\/[\w-]+\/issues\/\d+$/;
+    if (githubIssues && Array.isArray(githubIssues)) {
+      for (const issue of githubIssues) {
+        if (typeof issue === 'string' && issue.trim() && !githubPattern.test(issue)) {
+          return json({ error: `Invalid GitHub issue URL format: ${issue}` }, { status: 400 });
+        }
       }
     }
 
-    await updateComponentStatus(id, status, status === 'fail' ? (githubIssue || null) : null);
+    // Preserve existing issues if not explicitly provided
+    let issuesToSave = githubIssues;
+    if (issuesToSave === undefined) {
+      // Keep existing issues when just changing status
+      issuesToSave = component.github_issues ? JSON.parse(component.github_issues) : [];
+    }
+
+    await updateComponentStatus(id, status, issuesToSave);
 
     return json({ success: true });
   } catch (error) {

@@ -1,6 +1,7 @@
 <script>
   import { Button } from '$lib/components/ui/button';
   import { Input } from '$lib/components/ui/input';
+  import { Textarea } from '$lib/components/ui/textarea';
   import { Progress } from '$lib/components/ui/progress';
   import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '$lib/components/ui/dialog';
   import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '$lib/components/ui/table';
@@ -12,10 +13,13 @@
 
   let showBlockedDialog = $state(false);
   let blockedReason = $state('');
+  let notes = $state('');
   let isUpdating = $state(false);
+  let isSavingNotes = $state(false);
 
   $effect(() => {
     blockedReason = data.connector.blocked_reason || '';
+    notes = data.connector.notes || '';
   });
 
   const testedCount = $derived(
@@ -62,6 +66,27 @@
       return;
     }
     updateConnectorStatus('blocked', blockedReason.trim());
+  }
+
+  async function saveNotes() {
+    isSavingNotes = true;
+    try {
+      const response = await fetch(`/api/connectors/${data.connector.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ notes })
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        alert(error.error || 'Failed to save notes');
+      }
+    } catch (error) {
+      console.error('Error saving notes:', error);
+      alert('Failed to save notes');
+    } finally {
+      isSavingNotes = false;
+    }
   }
 </script>
 
@@ -120,6 +145,20 @@
     </div>
   {/if}
 
+  <!-- Notes -->
+  <div class="border rounded-lg p-4 space-y-2">
+    <label for="connector-notes" class="text-sm font-medium">Notes</label>
+    <Textarea
+      id="connector-notes"
+      placeholder="Add notes about this connector..."
+      bind:value={notes}
+      rows={4}
+      disabled={isSavingNotes}
+      onblur={saveNotes}
+    />
+    <p class="text-xs text-muted-foreground">Notes are saved automatically when you click outside the textarea.</p>
+  </div>
+
   <!-- Progress -->
   <div class="border rounded-lg p-4 space-y-3">
     <div class="flex justify-between text-sm">
@@ -147,7 +186,7 @@
           <TableHead>Description</TableHead>
           <TableHead>Status</TableHead>
           <TableHead>Actions</TableHead>
-          <TableHead>GitHub Issue</TableHead>
+          <TableHead>GitHub Issues</TableHead>
         </TableRow>
       </TableHeader>
       <TableBody>

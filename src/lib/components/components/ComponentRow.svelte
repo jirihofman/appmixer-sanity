@@ -3,22 +3,36 @@
   import { Button } from '$lib/components/ui/button';
   import { Input } from '$lib/components/ui/input';
   import StatusBadge from '$lib/components/shared/StatusBadge.svelte';
+  import { ExternalLink, Plus, X } from 'lucide-svelte';
 
   let { component, onStatusChange } = $props();
 
-  let githubIssue = $state('');
+  let githubIssues = $state([]);
+  let newIssueUrl = $state('');
   let isUpdating = $state(false);
+  let showAddInput = $state(false);
 
   $effect(() => {
-    githubIssue = component.github_issue || '';
+    try {
+      githubIssues = component.github_issues ? JSON.parse(component.github_issues) : [];
+    } catch {
+      githubIssues = [];
+    }
   });
 
-  async function setStatus(status) {
+  // Extract issue number from GitHub URL
+  function getIssueNumber(url) {
+    const match = url?.match(/\/issues\/(\d+)/);
+    return match ? `#${match[1]}` : null;
+  }
+
+  async function setStatus(/** @type {string} */ status, /** @type {string[] | undefined} */ issues = undefined) {
     isUpdating = true;
     try {
+      /** @type {{ status: string, githubIssues?: string[] }} */
       const body = { status };
-      if (status === 'fail' && githubIssue) {
-        body.githubIssue = githubIssue;
+      if (issues !== undefined) {
+        body.githubIssues = issues;
       }
 
       const response = await fetch(`/api/components/${component.id}`, {
@@ -40,6 +54,19 @@
       isUpdating = false;
     }
   }
+
+  async function addIssue() {
+    if (!newIssueUrl.trim()) return;
+    const updatedIssues = [...githubIssues, newIssueUrl.trim()];
+    await setStatus(component.status || 'fail', updatedIssues);
+    newIssueUrl = '';
+    showAddInput = false;
+  }
+
+  async function removeIssue(/** @type {number} */ index) {
+    const updatedIssues = githubIssues.filter((/** @type {string} */ _, /** @type {number} */ i) => i !== index);
+    await setStatus(component.status, updatedIssues);
+  }
 </script>
 
 <TableRow>
@@ -56,7 +83,16 @@
   </TableCell>
 
   <TableCell>
-    <span class="text-xs text-muted-foreground">{component.description || '-'}</span>
+    {#if component.description}
+      <span
+        class="text-xs text-muted-foreground truncate block max-w-[200px] cursor-help"
+        title={component.description}
+      >
+        {component.description}
+      </span>
+    {:else}
+      <span class="text-xs text-muted-foreground">-</span>
+    {/if}
   </TableCell>
 
   <TableCell>
@@ -84,21 +120,62 @@
     </div>
   </TableCell>
 
-  <TableCell>
-    {#if component.status === 'fail'}
-      <Input
-        type="url"
-        placeholder="GitHub issue URL"
-        bind:value={githubIssue}
-        class="text-xs h-8"
-        onblur={() => githubIssue && setStatus('fail')}
-      />
-    {:else if component.github_issue}
-      <a href={component.github_issue} target="_blank" rel="noopener noreferrer" class="text-xs text-blue-600 hover:underline truncate block max-w-[200px]">
-        {component.github_issue}
-      </a>
-    {:else}
-      <span class="text-xs text-muted-foreground">-</span>
-    {/if}
+  <TableCell class="min-w-[280px]">
+    <div class="flex flex-col gap-1">
+      {#if githubIssues.length > 0}
+        <div class="flex flex-wrap gap-1">
+          {#each githubIssues as issue, index}
+            <span class="inline-flex items-center gap-1 bg-muted rounded px-1.5 py-0.5">
+              <a
+                href={issue}
+                target="_blank"
+                rel="noopener noreferrer"
+                class="text-xs text-blue-600 hover:underline"
+                title={issue}
+              >
+                {getIssueNumber(issue) || issue}
+                <ExternalLink class="w-3 h-3 inline" />
+              </a>
+              <button
+                type="button"
+                onclick={() => removeIssue(index)}
+                class="text-muted-foreground hover:text-destructive ml-0.5"
+                disabled={isUpdating}
+                title="Remove issue"
+              >
+                <X class="w-3 h-3" />
+              </button>
+            </span>
+          {/each}
+        </div>
+      {/if}
+
+      {#if showAddInput}
+        <div class="flex gap-1">
+          <Input
+            type="url"
+            placeholder="GitHub issue URL"
+            bind:value={newIssueUrl}
+            class="text-xs h-7 flex-1"
+            onkeydown={(/** @type {KeyboardEvent} */ e) => e.key === 'Enter' && addIssue()}
+          />
+          <Button size="sm" variant="ghost" class="h-7 px-2" onclick={addIssue} disabled={isUpdating}>
+            Add
+          </Button>
+          <Button size="sm" variant="ghost" class="h-7 px-1" onclick={() => { showAddInput = false; newIssueUrl = ''; }}>
+            <X class="w-4 h-4" />
+          </Button>
+        </div>
+      {:else}
+        <button
+          type="button"
+          onclick={() => (showAddInput = true)}
+          class="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+        >
+          <Plus class="w-3 h-3" />
+          Add issue
+        </button>
+      {/if}
+    </div>
   </TableCell>
 </TableRow>

@@ -52,11 +52,17 @@ export async function addComponentToConnector({
 /**
  * Update component status
  */
-export async function updateComponentStatus(id, status, githubIssue = null) {
+export async function updateComponentStatus(id, status, githubIssues = []) {
   const now = new Date().toISOString();
+  // Filter out empty strings and store as JSON array
+  const filteredIssues = Array.isArray(githubIssues)
+    ? githubIssues.filter(issue => issue && issue.trim())
+    : [];
+  const issuesJson = filteredIssues.length > 0 ? JSON.stringify(filteredIssues) : null;
+
   await getDb().execute({
-    sql: `UPDATE components SET status = ?, github_issue = ?, tested_at = ? WHERE id = ?`,
-    args: [status, githubIssue, now, id]
+    sql: `UPDATE components SET status = ?, github_issues = ?, tested_at = ? WHERE id = ?`,
+    args: [status, issuesJson, now, id]
   });
 
   // Get the connector ID and recalculate its status
