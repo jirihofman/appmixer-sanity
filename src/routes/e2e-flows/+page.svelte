@@ -31,6 +31,9 @@
   let isSavingAppmixerSettings = $state(false);
   let appmixerSettingsError = $state('');
 
+  // Page loading state
+  let isRefreshing = $state(false);
+
   // Initialize GitHub settings form when dialog opens
   $effect(() => {
     if (showGitHubSettingsDialog && data.githubInfo) {
@@ -83,7 +86,9 @@
       }
 
       showGitHubSettingsDialog = false;
+      isRefreshing = true;
       await invalidateAll();
+      isRefreshing = false;
     } catch (e) {
       gitHubSettingsError = 'Failed to save settings';
     } finally {
@@ -110,7 +115,9 @@
         }
 
         showAppmixerSettingsDialog = false;
+        isRefreshing = true;
         await invalidateAll();
+        isRefreshing = false;
       } catch (e) {
         appmixerSettingsError = 'Failed to clear credentials';
       } finally {
@@ -145,7 +152,9 @@
       }
 
       showAppmixerSettingsDialog = false;
+      isRefreshing = true;
       await invalidateAll();
+      isRefreshing = false;
     } catch (e) {
       appmixerSettingsError = 'Failed to save settings';
     } finally {
@@ -181,10 +190,33 @@
   };
 </script>
 
+<style>
+  @keyframes indeterminate {
+    0% {
+      transform: translateX(-100%);
+    }
+    100% {
+      transform: translateX(400%);
+    }
+  }
+  .animate-indeterminate {
+    animation: indeterminate 1.5s ease-in-out infinite;
+  }
+</style>
+
 <svelte:head>
   <title>E2E Test Flows - Appmixer Sanity Check</title>
 </svelte:head>
 
+{#if isRefreshing}
+  <!-- Loading indicator (same as layout navigation) -->
+  <div class="flex flex-col items-center justify-center py-12 gap-4">
+    <div class="w-64 h-2 bg-secondary rounded-full overflow-hidden">
+      <div class="h-full w-1/4 bg-primary rounded-full animate-indeterminate"></div>
+    </div>
+    <span class="text-sm text-muted-foreground">Loading...</span>
+  </div>
+{:else}
 <div class="space-y-6">
   <!-- Header -->
   <div class="flex items-center justify-between">
@@ -380,6 +412,7 @@
     {/if}
   {/if}
 </div>
+{/if}
 
 <!-- GitHub Settings Dialog -->
 <Dialog bind:open={showGitHubSettingsDialog}>
@@ -473,7 +506,7 @@
 
 <!-- Appmixer Settings Dialog -->
 <Dialog bind:open={showAppmixerSettingsDialog}>
-  <DialogContent>
+  <DialogContent class="max-w-2xl">
     <DialogHeader>
       <DialogTitle>Appmixer Instance Settings</DialogTitle>
       <DialogDescription>
@@ -484,9 +517,27 @@
     <div class="py-4 space-y-4">
       <div class="space-y-2">
         <label for="appmixer-url" class="text-sm font-medium">Base URL</label>
+        <div class="flex flex-wrap gap-2 mb-2">
+          <button
+            type="button"
+            class="px-3 py-1 text-xs rounded-full border transition-colors {appmixerBaseUrl === 'https://api-appmixer-dev-dev-automated-00001.tenants.infra.appmixer.ai' ? 'bg-primary text-primary-foreground border-primary' : 'bg-muted hover:bg-muted/80 border-border'}"
+            onclick={() => appmixerBaseUrl = 'https://api-appmixer-dev-dev-automated-00001.tenants.infra.appmixer.ai'}
+            disabled={isSavingAppmixerSettings || clearAppmixerCredentials}
+          >
+            Dev Automated
+          </button>
+          <button
+            type="button"
+            class="px-3 py-1 text-xs rounded-full border transition-colors {appmixerBaseUrl === 'https://api.clientio.appmixer.cloud' ? 'bg-primary text-primary-foreground border-primary' : 'bg-muted hover:bg-muted/80 border-border'}"
+            onclick={() => appmixerBaseUrl = 'https://api.clientio.appmixer.cloud'}
+            disabled={isSavingAppmixerSettings || clearAppmixerCredentials}
+          >
+            ClientIO Cloud
+          </button>
+        </div>
         <Input
           id="appmixer-url"
-          placeholder="e.g., https://api.appmixer.com"
+          placeholder="Or enter custom URL..."
           bind:value={appmixerBaseUrl}
           disabled={isSavingAppmixerSettings || clearAppmixerCredentials}
         />

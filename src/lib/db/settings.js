@@ -1,30 +1,32 @@
 import { getDb } from './index.js';
 
 /**
- * Get a setting value by key
+ * Get a user setting value by key
+ * @param {string} userId
  * @param {string} key
  * @returns {Promise<string|null>}
  */
-export async function getSetting(key) {
+export async function getUserSetting(userId, key) {
     const result = await getDb().execute({
-        sql: 'SELECT value FROM settings WHERE key = ?',
-        args: [key]
+        sql: 'SELECT value FROM user_settings WHERE user_id = ? AND key = ?',
+        args: [userId, key]
     });
     return result.rows[0]?.value || null;
 }
 
 /**
- * Get multiple settings by keys
+ * Get multiple user settings by keys
+ * @param {string} userId
  * @param {string[]} keys
  * @returns {Promise<Record<string, string>>}
  */
-export async function getSettings(keys) {
+export async function getUserSettings(userId, keys) {
     if (keys.length === 0) return {};
 
     const placeholders = keys.map(() => '?').join(', ');
     const result = await getDb().execute({
-        sql: `SELECT key, value FROM settings WHERE key IN (${placeholders})`,
-        args: keys
+        sql: `SELECT key, value FROM user_settings WHERE user_id = ? AND key IN (${placeholders})`,
+        args: [userId, ...keys]
     });
 
     const settings = {};
@@ -35,29 +37,31 @@ export async function getSettings(keys) {
 }
 
 /**
- * Set a setting value
+ * Set a user setting value
+ * @param {string} userId
  * @param {string} key
  * @param {string} value
  */
-export async function setSetting(key, value) {
+export async function setUserSetting(userId, key, value) {
     await getDb().execute({
-        sql: `INSERT INTO settings (key, value, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP)
-              ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = CURRENT_TIMESTAMP`,
-        args: [key, value]
+        sql: `INSERT INTO user_settings (user_id, key, value, updated_at) VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+              ON CONFLICT(user_id, key) DO UPDATE SET value = excluded.value, updated_at = CURRENT_TIMESTAMP`,
+        args: [userId, key, value]
     });
 }
 
 /**
- * Set multiple settings at once
+ * Set multiple user settings at once
+ * @param {string} userId
  * @param {Record<string, string>} settings
  */
-export async function setSettings(settings) {
+export async function setUserSettings(userId, settings) {
     const db = getDb();
     for (const [key, value] of Object.entries(settings)) {
         await db.execute({
-            sql: `INSERT INTO settings (key, value, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP)
-                  ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = CURRENT_TIMESTAMP`,
-            args: [key, value]
+            sql: `INSERT INTO user_settings (user_id, key, value, updated_at) VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+                  ON CONFLICT(user_id, key) DO UPDATE SET value = excluded.value, updated_at = CURRENT_TIMESTAMP`,
+            args: [userId, key, value]
         });
     }
 }

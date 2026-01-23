@@ -1,20 +1,21 @@
 import { APPMIXER_USERNAME, APPMIXER_PASSWORD, APPMIXER_BASE_URL } from '$env/static/private';
-import { getSettings, SETTING_KEYS } from '$lib/db/settings.js';
+import { getUserSettings, SETTING_KEYS } from '$lib/db/settings.js';
 
-let cachedToken = null;
-let tokenExpiry = null;
-let cachedConfig = null;
+// Token cache keyed by user+config
+const tokenCache = new Map();
+const TOKEN_TTL = 55 * 60 * 1000; // 55 minutes
 
 /**
  * Get Appmixer configuration (from DB settings or env defaults)
+ * @param {string} userId - User ID (email)
  * @returns {Promise<{baseUrl: string, username: string, password: string}>}
  */
-export async function getAppmixerConfig() {
-    const settings = await getSettings([
+export async function getAppmixerConfig(userId) {
+    const settings = userId ? await getUserSettings(userId, [
         SETTING_KEYS.APPMIXER_BASE_URL,
         SETTING_KEYS.APPMIXER_USERNAME,
         SETTING_KEYS.APPMIXER_PASSWORD
-    ]);
+    ]) : {};
 
     return {
         baseUrl: settings[SETTING_KEYS.APPMIXER_BASE_URL] || APPMIXER_BASE_URL || '',
@@ -24,31 +25,31 @@ export async function getAppmixerConfig() {
 }
 
 /**
- * Clear cached token (call when config changes)
+ * Clear cached token for a user (call when config changes)
+ * @param {string} userId - User ID (email)
  */
-export function clearAppmixerTokenCache() {
-    cachedToken = null;
-    tokenExpiry = null;
-    cachedConfig = null;
+export function clearAppmixerTokenCache(userId) {
+    if (userId) {
+        tokenCache.delete(userId);
+    } else {
+        tokenCache.clear();
+    }
 }
 
 /**
  * Authenticate with Appmixer and get access token
- * Token is cached for 55 minutes
+ * Token is cached for 55 minutes per user
+ * @param {string} userId - User ID (email)
  * @returns {Promise<string>}
  */
-async function getAccessToken() {
-    const config = await getAppmixerConfig();
+async function getAccessToken(userId) {
+    const config = await getAppmixerConfig(userId);
     const configKey = `${config.baseUrl}:${config.username}`;
+    const cacheKey = `${userId}:${configKey}`;
 
-    // Clear cache if config changed
-    if (cachedConfig && cachedConfig !== configKey) {
-        cachedToken = null;
-        tokenExpiry = null;
-    }
-
-    if (cachedToken && tokenExpiry && Date.now() < tokenExpiry) {
-        return cachedToken;
+    const cached = tokenCache.get(cacheKey);
+    if (cached && Date.now() < cached.expiry) {
+        return cached.token;
     }
 
     if (!config.baseUrl || !config.username || !config.password) {
@@ -65,23 +66,26 @@ async function getAccessToken() {
     });
 
     if (!response.ok) {
-        throw new Error(`Appmixer auth failed:  ${response.status}`);
+        throw new Error(`Appmixer auth failed: ${response.status}`);
     }
 
     const data = await response.json();
-    cachedToken = data.token;
-    tokenExpiry = Date.now() + 55 * 60 * 1000; // Cache for 55 minutes
-    cachedConfig = configKey;
-    return cachedToken;
+    tokenCache.set(cacheKey, {
+        token: data.token,
+        expiry: Date.now() + TOKEN_TTL
+    });
+
+    return data.token;
 }
 
 /**
  * Fetch all E2E test flows from Appmixer
+ * @param {string} userId - User ID (email)
  * @returns {Promise<Array<{flowId: string, name: string}>>}
  */
-export async function fetchE2EFlows() {
-    const config = await getAppmixerConfig();
-    const token = await getAccessToken();
+export async function fetchE2EFlows(userId) {
+    const config = await getAppmixerConfig(userId);
+    const token = await getAccessToken(userId);
     const response = await fetch(
         `${config.baseUrl}/flows?filter=customFields.category:E2E_test_flow&projection=-thumbnail`,
         {
@@ -98,15 +102,16 @@ export async function fetchE2EFlows() {
 
 /**
  * Get E2E flows for a specific connector
+ * @param {string} userId - User ID (email)
  * @param {string} connectorName - Full connector name (e.g., "appmixer.box")
  * @returns {Promise<Array<{flowId: string, name: string, url: string}>>}
  */
-export async function getE2EFlowsForConnector(connectorName) {
-    const config = await getAppmixerConfig();
+export async function getE2EFlowsForConnector(userId, connectorName) {
+    const config = await getAppmixerConfig(userId);
     // Extract short name (e.g., "appmixer.box" -> "box")
     const shortName = connectorName.split('.').pop().toLowerCase();
 
-    const flows = await fetchE2EFlows();
+    const flows = await fetchE2EFlows(userId);
 
     // Build designer URL by replacing api. with my.
     const designerUrl = config.baseUrl.replace('api.', 'my.');
@@ -122,21 +127,23 @@ export async function getE2EFlowsForConnector(connectorName) {
 
 /**
  * Check if Appmixer is configured
+ * @param {string} userId - User ID (email)
  * @returns {Promise<boolean>}
  */
-export async function isAppmixerConfigured() {
-    const config = await getAppmixerConfig();
+export async function isAppmixerConfigured(userId) {
+    const config = await getAppmixerConfig(userId);
     return !!(config.baseUrl && config.username && config.password);
 }
 
 /**
  * Fetch a single flow by ID with full details
+ * @param {string} userId - User ID (email)
  * @param {string} flowId
  * @returns {Promise<Object>}
  */
-export async function fetchFlowById(flowId) {
-    const config = await getAppmixerConfig();
-    const token = await getAccessToken();
+export async function fetchFlowById(userId, flowId) {
+    const config = await getAppmixerConfig(userId);
+    const token = await getAccessToken(userId);
     const response = await fetch(
         `${config.baseUrl}/flows/${flowId}?projection=-thumbnail,-stageChangeInfo,-started,-stopped`,
         {
@@ -186,24 +193,26 @@ export function cleanFlowForComparison(flow) {
 
 /**
  * Get the designer base URL
+ * @param {string} userId - User ID (email)
  * @returns {Promise<string>}
  */
-export async function getDesignerBaseUrl() {
-    const config = await getAppmixerConfig();
+export async function getDesignerBaseUrl(userId) {
+    const config = await getAppmixerConfig(userId);
     return config.baseUrl.replace('api.', 'my.');
 }
 
 /**
  * Get Appmixer instance info (safe for client exposure)
+ * @param {string} userId - User ID (email)
  * @returns {Promise<{baseUrl: string, username: string, hasEnvCredentials: boolean, hasCustomCredentials: boolean}>}
  */
-export async function getAppmixerInfo() {
-    const config = await getAppmixerConfig();
-    const settings = await getSettings([
+export async function getAppmixerInfo(userId) {
+    const config = await getAppmixerConfig(userId);
+    const settings = userId ? await getUserSettings(userId, [
         SETTING_KEYS.APPMIXER_BASE_URL,
         SETTING_KEYS.APPMIXER_USERNAME,
         SETTING_KEYS.APPMIXER_PASSWORD
-    ]);
+    ]) : {};
 
     const hasEnvCredentials = !!(APPMIXER_BASE_URL && APPMIXER_USERNAME && APPMIXER_PASSWORD);
     const hasCustomCredentials = !!(settings[SETTING_KEYS.APPMIXER_BASE_URL] && settings[SETTING_KEYS.APPMIXER_USERNAME] && settings[SETTING_KEYS.APPMIXER_PASSWORD]);

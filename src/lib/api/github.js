@@ -3,7 +3,7 @@
  */
 
 import { GITHUB_TOKEN, GITHUB_REPO_OWNER, GITHUB_REPO_NAME, GITHUB_REPO_BRANCH } from '$env/static/private';
-import { getSettings, SETTING_KEYS } from '$lib/db/settings.js';
+import { getUserSettings, SETTING_KEYS } from '$lib/db/settings.js';
 
 const GITHUB_API_BASE = 'https://api.github.com';
 
@@ -16,15 +16,16 @@ const ENV_DEFAULTS = {
 
 /**
  * Get current GitHub repo configuration (from DB settings or env defaults)
+ * @param {string} userId - User ID (email)
  * @returns {Promise<{owner: string, repo: string, branch: string, token: string}>}
  */
-export async function getGitHubConfig() {
-    const settings = await getSettings([
+export async function getGitHubConfig(userId) {
+    const settings = userId ? await getUserSettings(userId, [
         SETTING_KEYS.GITHUB_REPO_OWNER,
         SETTING_KEYS.GITHUB_REPO_NAME,
         SETTING_KEYS.GITHUB_REPO_BRANCH,
         SETTING_KEYS.GITHUB_TOKEN
-    ]);
+    ]) : {};
 
     // Custom token from DB overrides env token
     const token = settings[SETTING_KEYS.GITHUB_TOKEN] || GITHUB_TOKEN || '';
@@ -102,10 +103,11 @@ async function getRepoTree(config) {
 
 /**
  * Find all test-flow files in the repository
+ * @param {string} userId - User ID (email)
  * @returns {Promise<Array<{path: string, sha: string, connector: string, name: string}>>}
  */
-export async function findTestFlowFiles() {
-    const config = await getGitHubConfig();
+export async function findTestFlowFiles(userId) {
+    const config = await getGitHubConfig(userId);
     const tree = await getRepoTree(config);
 
     // Filter for test-flow*.json files in src/appmixer directory
@@ -132,11 +134,12 @@ export async function findTestFlowFiles() {
 
 /**
  * Fetch the content of a file from GitHub
+ * @param {string} userId - User ID (email)
  * @param {string} path - File path in repository
  * @returns {Promise<string>}
  */
-export async function fetchFileContent(path) {
-    const config = await getGitHubConfig();
+export async function fetchFileContent(userId, path) {
+    const config = await getGitHubConfig(userId);
     const response = await fetch(
         `${GITHUB_API_BASE}/repos/${config.owner}/${config.repo}/contents/${path}?ref=${config.branch}`,
         {
@@ -157,20 +160,22 @@ export async function fetchFileContent(path) {
 
 /**
  * Fetch test-flow file and parse its JSON
+ * @param {string} userId - User ID (email)
  * @param {string} path - File path in repository
  * @returns {Promise<{name: string, flow: Object}>}
  */
-export async function fetchTestFlowJson(path) {
-    const content = await fetchFileContent(path);
+export async function fetchTestFlowJson(userId, path) {
+    const content = await fetchFileContent(userId, path);
     return JSON.parse(content);
 }
 
 /**
  * Get GitHub repository info
+ * @param {string} userId - User ID (email)
  * @returns {Promise<{owner: string, repo: string, branch: string, url: string}>}
  */
-export async function getGitHubRepoInfo() {
-    const config = await getGitHubConfig();
+export async function getGitHubRepoInfo(userId) {
+    const config = await getGitHubConfig(userId);
     return {
         owner: config.owner,
         repo: config.repo,
@@ -181,10 +186,11 @@ export async function getGitHubRepoInfo() {
 
 /**
  * Build a map of flow name -> GitHub file info
+ * @param {string} userId - User ID (email)
  * @returns {Promise<Map<string, {path: string, sha: string, connector: string, url: string, content?: Object}>>}
  */
-export async function buildFlowNameToGitHubMap() {
-    const testFlowFiles = await findTestFlowFiles();
+export async function buildFlowNameToGitHubMap(userId) {
+    const testFlowFiles = await findTestFlowFiles(userId);
     const flowMap = new Map();
 
     // Fetch content for each file to get the flow name
@@ -197,7 +203,7 @@ export async function buildFlowNameToGitHubMap() {
         const results = await Promise.all(
             batch.map(async (file) => {
                 try {
-                    const content = await fetchTestFlowJson(file.path);
+                    const content = await fetchTestFlowJson(userId, file.path);
                     return { file, content };
                 } catch (e) {
                     console.error(`Failed to fetch ${file.path}:`, e.message);

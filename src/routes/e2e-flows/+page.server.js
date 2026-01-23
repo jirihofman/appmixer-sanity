@@ -60,16 +60,19 @@ function compareFlows(serverFlow, githubFlow) {
 }
 
 /** @type {import('./$types').PageServerLoad} */
-export async function load() {
-    const appmixerInfo = await getAppmixerInfo();
-    const githubInfo = await getGitHubRepoInfo();
-    const githubConfig = await getGitHubConfig();
+export async function load({ locals }) {
+    const session = await locals.auth();
+    const userId = session?.user?.email;
+
+    const appmixerInfo = await getAppmixerInfo(userId);
+    const githubInfo = await getGitHubRepoInfo(userId);
+    const githubConfig = await getGitHubConfig(userId);
 
     // Add token status info (don't expose actual token)
     githubInfo.hasEnvToken = !!GITHUB_TOKEN;
     githubInfo.hasCustomToken = !!githubConfig.token && githubConfig.token !== GITHUB_TOKEN;
 
-    const appmixerConfigured = await isAppmixerConfigured();
+    const appmixerConfigured = await isAppmixerConfigured(userId);
     if (!appmixerConfigured) {
         return {
             flows: [],
@@ -83,14 +86,14 @@ export async function load() {
     try {
         // Fetch flows from Appmixer and GitHub in parallel
         const [appmixerFlows, githubFlowMap] = await Promise.all([
-            fetchE2EFlows(),
-            buildFlowNameToGitHubMap().catch(e => {
+            fetchE2EFlows(userId),
+            buildFlowNameToGitHubMap(userId).catch(e => {
                 console.error('Failed to fetch GitHub flows:', e);
                 return new Map();
             })
         ]);
 
-        const appmixerConfig = await getAppmixerConfig();
+        const appmixerConfig = await getAppmixerConfig(userId);
         const designerBaseUrl = appmixerConfig.baseUrl.replace('api.', 'my.');
 
         // Process each flow and compare with GitHub
@@ -102,7 +105,7 @@ export async function load() {
                 if (githubInfo) {
                     try {
                         // Fetch full flow from Appmixer for comparison
-                        const fullFlow = await fetchFlowById(flow.flowId);
+                        const fullFlow = await fetchFlowById(userId, flow.flowId);
                         syncStatus = compareFlows(fullFlow, githubInfo.content);
                     } catch (e) {
                         console.error(`Failed to fetch flow ${flow.flowId}:`, e);

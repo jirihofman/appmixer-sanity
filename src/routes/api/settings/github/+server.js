@@ -1,5 +1,5 @@
 import { json } from '@sveltejs/kit';
-import { getSettings, setSettings, setSetting, SETTING_KEYS } from '$lib/db/settings.js';
+import { getUserSettings, setUserSettings, setUserSetting, SETTING_KEYS } from '$lib/db/settings.js';
 import { GITHUB_REPO_OWNER, GITHUB_REPO_NAME, GITHUB_REPO_BRANCH, GITHUB_TOKEN } from '$env/static/private';
 
 // Default values from environment
@@ -10,8 +10,14 @@ const DEFAULTS = {
 };
 
 /** @type {import('./$types').RequestHandler} */
-export async function GET() {
-    const settings = await getSettings([
+export async function GET({ locals }) {
+    const session = await locals.auth();
+    if (!session?.user?.email) {
+        return json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    const userId = session.user.email;
+    const settings = await getUserSettings(userId, [
         SETTING_KEYS.GITHUB_REPO_OWNER,
         SETTING_KEYS.GITHUB_REPO_NAME,
         SETTING_KEYS.GITHUB_REPO_BRANCH,
@@ -37,14 +43,20 @@ export async function GET() {
 }
 
 /** @type {import('./$types').RequestHandler} */
-export async function POST({ request }) {
+export async function POST({ request, locals }) {
+    const session = await locals.auth();
+    if (!session?.user?.email) {
+        return json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    const userId = session.user.email;
     const { owner, repo, branch, token, clearToken } = await request.json();
 
     if (!owner || !repo || !branch) {
         return json({ error: 'Owner, repo, and branch are required' }, { status: 400 });
     }
 
-    await setSettings({
+    await setUserSettings(userId, {
         [SETTING_KEYS.GITHUB_REPO_OWNER]: owner.trim(),
         [SETTING_KEYS.GITHUB_REPO_NAME]: repo.trim(),
         [SETTING_KEYS.GITHUB_REPO_BRANCH]: branch.trim()
@@ -53,9 +65,9 @@ export async function POST({ request }) {
     // Handle token separately - only update if provided or if clearing
     if (clearToken) {
         // Clear the custom token by setting empty value
-        await setSetting(SETTING_KEYS.GITHUB_TOKEN, '');
+        await setUserSetting(userId, SETTING_KEYS.GITHUB_TOKEN, '');
     } else if (token && token.trim()) {
-        await setSetting(SETTING_KEYS.GITHUB_TOKEN, token.trim());
+        await setUserSetting(userId, SETTING_KEYS.GITHUB_TOKEN, token.trim());
     }
 
     return json({ success: true });

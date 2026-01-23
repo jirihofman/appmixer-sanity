@@ -1,10 +1,16 @@
 import { json } from '@sveltejs/kit';
-import { getSettings, setSettings, SETTING_KEYS } from '$lib/db/settings.js';
+import { getUserSettings, setUserSettings, SETTING_KEYS } from '$lib/db/settings.js';
 import { APPMIXER_BASE_URL, APPMIXER_USERNAME, APPMIXER_PASSWORD } from '$env/static/private';
 
 /** @type {import('./$types').RequestHandler} */
-export async function GET() {
-    const settings = await getSettings([
+export async function GET({ locals }) {
+    const session = await locals.auth();
+    if (!session?.user?.email) {
+        return json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    const userId = session.user.email;
+    const settings = await getUserSettings(userId, [
         SETTING_KEYS.APPMIXER_BASE_URL,
         SETTING_KEYS.APPMIXER_USERNAME,
         SETTING_KEYS.APPMIXER_PASSWORD
@@ -27,12 +33,18 @@ export async function GET() {
 }
 
 /** @type {import('./$types').RequestHandler} */
-export async function POST({ request }) {
+export async function POST({ request, locals }) {
+    const session = await locals.auth();
+    if (!session?.user?.email) {
+        return json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    const userId = session.user.email;
     const { baseUrl, username, password, clearCredentials } = await request.json();
 
     if (clearCredentials) {
         // Clear custom credentials by setting empty values
-        await setSettings({
+        await setUserSettings(userId, {
             [SETTING_KEYS.APPMIXER_BASE_URL]: '',
             [SETTING_KEYS.APPMIXER_USERNAME]: '',
             [SETTING_KEYS.APPMIXER_PASSWORD]: ''
@@ -54,7 +66,7 @@ export async function POST({ request }) {
         settingsToSave[SETTING_KEYS.APPMIXER_PASSWORD] = password.trim();
     }
 
-    await setSettings(settingsToSave);
+    await setUserSettings(userId, settingsToSave);
 
     return json({ success: true });
 }

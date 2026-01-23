@@ -86,7 +86,7 @@ export async function initializeDatabase() {
   await client.execute(`CREATE INDEX IF NOT EXISTS idx_components_connector ON components(connector_id)`);
   await client.execute(`CREATE INDEX IF NOT EXISTS idx_test_runs_created ON test_runs(created_at DESC)`);
 
-  // Settings table for app configuration
+  // Settings table for app configuration (legacy global settings)
   await client.execute(`
     CREATE TABLE IF NOT EXISTS settings (
       key TEXT PRIMARY KEY,
@@ -94,4 +94,17 @@ export async function initializeDatabase() {
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
     )
   `);
+
+  // User settings table for per-user configuration
+  await client.execute(`
+    CREATE TABLE IF NOT EXISTS user_settings (
+      user_id TEXT NOT NULL,
+      key TEXT NOT NULL,
+      value TEXT NOT NULL,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (user_id, key)
+    )
+  `);
+
+  await client.execute(`CREATE INDEX IF NOT EXISTS idx_user_settings_user ON user_settings(user_id)`);
 }
