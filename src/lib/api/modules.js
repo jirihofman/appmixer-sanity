@@ -106,7 +106,10 @@ export async function fetchAllConnectorsWithComponents(onProgress) {
     const batchResults = await Promise.all(
       batch.map(async (connector) => {
         try {
-          const components = await fetchComponentsForConnector(connector.name, connector.version);
+          const components = await fetchComponentsForConnector(
+            connector.name,
+            connector.version
+          );
           completed++;
           onProgress?.({ completed, total, current: connector.name });
           return { ...connector, components };

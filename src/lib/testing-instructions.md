@@ -5,13 +5,12 @@
 This document provides guidance on how to test Appmixer connectors and their components during sanity checks.
 
 Instance for sanity check testing: https://my.clientio.appmixer.cloud/  
-username: test@appmixer.ai  
+username: test@appmixer.ai   
 Test flow naming convention: `Sanity check - {connector name}`  
 Github repository for issues: https://github.com/appmixer/appmixer-components  
 Github issue conventions:
-
-- title: `{connector.name}.{component.name}: brief description of the issue`, for example `airtable.NewRecord: trigger is not firing`
-- label: `sanity-check #{sanity check number}`, for example `sanity-check #1`
+ - title: `{connector.name}.{component.name}: brief description of the issue`, for example `airtable.NewRecord: trigger is not firing`
+ - label: `sanity-check #{sanity check number}`, for example `sanity-check #1`
 
 ## Testing Connectors
 
@@ -32,7 +31,7 @@ Github issue conventions:
 
 - Test with valid inputs first
 - Test edge cases (empty values, special characters)
-- Verify output format
+- Verify output format 
 
 ### Triggers
 
@@ -41,17 +40,18 @@ Github issue conventions:
 
 ## Status Guidelines
 
-| Status      | When to Use                           |
-| ----------- | ------------------------------------- |
-| **OK**      | Component works as expected           |
-| **Fail**    | Component has issues that need fixing |
-| **Pending** | Not yet tested                        |
-| **Blocked** | Cannot test due to external factors   |
+| Status | When to Use |
+|--------|-------------|
+| **OK** | Component works as expected |
+| **Fail** | Component has issues that need fixing |
+| **Pending** | Not yet tested |
+| **Blocked** | Cannot test due to external factors |
 
 ## Reporting Issues
 
 If you find a bug:
 
 1. Set the component status to **Fail**
-2. Add a GitHub issue link in the component details.
+2. Add a GitHub issue link in the component details.  
 3. Include steps to reproduce in the issue
+

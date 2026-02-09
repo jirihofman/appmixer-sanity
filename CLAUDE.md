@@ -21,7 +21,6 @@ pnpm run format       # Format code with Prettier
 ## Environment Variables
 
 Required (see `.env.example`):
-
 - `TURSO_DATABASE_URL` - Turso database URL (e.g., `libsql://your-db.turso.io`)
 - `TURSO_AUTH_TOKEN` - Turso authentication token
 
@@ -76,9 +75,7 @@ let value = $state(data.field || '');
 
 // Correct - syncs when props change
 let value = $state('');
-$effect(() => {
-  value = data.field || '';
-});
+$effect(() => { value = data.field || ''; });
 ```
 
 Use `invalidateAll()` after mutations to refetch data.
