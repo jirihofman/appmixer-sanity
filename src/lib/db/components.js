@@ -63,7 +63,7 @@ export async function updateComponentStatus(id, status, githubIssues = []) {
   const now = new Date().toISOString();
   // Filter out empty strings and store as JSON array
   const filteredIssues = Array.isArray(githubIssues)
-    ? githubIssues.filter(issue => issue && issue.trim())
+    ? githubIssues.filter((issue) => issue && issue.trim())
     : [];
   const issuesJson = filteredIssues.length > 0 ? JSON.stringify(filteredIssues) : null;
 
@@ -95,7 +95,16 @@ export async function batchInsertComponents(components) {
         INSERT INTO components (id, connector_id, component_name, label, description, icon, version, is_private)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
       `,
-      args: [c.id, c.connectorId, c.componentName, c.label, c.description, c.icon, c.version, c.isPrivate ? 1 : 0]
+      args: [
+        c.id,
+        c.connectorId,
+        c.componentName,
+        c.label,
+        c.description,
+        c.icon,
+        c.version,
+        c.isPrivate ? 1 : 0
+      ]
     });
   }
 }

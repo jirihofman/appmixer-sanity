@@ -1,5 +1,9 @@
 import { json } from '@sveltejs/kit';
-import { getConnectorById, updateConnectorStatus, updateConnectorNotes } from '$lib/db/connectors.js';
+import {
+  getConnectorById,
+  updateConnectorStatus,
+  updateConnectorNotes
+} from '$lib/db/connectors.js';
 
 /** @type {import('./$types').RequestHandler} */
 export async function PATCH({ params, request }) {

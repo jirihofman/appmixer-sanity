@@ -7,11 +7,11 @@ import { getDb } from './index.js';
  * @returns {Promise<string|null>}
  */
 export async function getUserSetting(userId, key) {
-    const result = await getDb().execute({
-        sql: 'SELECT value FROM user_settings WHERE user_id = ? AND key = ?',
-        args: [userId, key]
-    });
-    return result.rows[0]?.value || null;
+  const result = await getDb().execute({
+    sql: 'SELECT value FROM user_settings WHERE user_id = ? AND key = ?',
+    args: [userId, key]
+  });
+  return result.rows[0]?.value || null;
 }
 
 /**
@@ -21,19 +21,19 @@ export async function getUserSetting(userId, key) {
  * @returns {Promise<Record<string, string>>}
  */
 export async function getUserSettings(userId, keys) {
-    if (keys.length === 0) return {};
+  if (keys.length === 0) return {};
 
-    const placeholders = keys.map(() => '?').join(', ');
-    const result = await getDb().execute({
-        sql: `SELECT key, value FROM user_settings WHERE user_id = ? AND key IN (${placeholders})`,
-        args: [userId, ...keys]
-    });
+  const placeholders = keys.map(() => '?').join(', ');
+  const result = await getDb().execute({
+    sql: `SELECT key, value FROM user_settings WHERE user_id = ? AND key IN (${placeholders})`,
+    args: [userId, ...keys]
+  });
 
-    const settings = {};
-    for (const row of result.rows) {
-        settings[row.key] = row.value;
-    }
-    return settings;
+  const settings = {};
+  for (const row of result.rows) {
+    settings[row.key] = row.value;
+  }
+  return settings;
 }
 
 /**
@@ -43,11 +43,11 @@ export async function getUserSettings(userId, keys) {
  * @param {string} value
  */
 export async function setUserSetting(userId, key, value) {
-    await getDb().execute({
-        sql: `INSERT INTO user_settings (user_id, key, value, updated_at) VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+  await getDb().execute({
+    sql: `INSERT INTO user_settings (user_id, key, value, updated_at) VALUES (?, ?, ?, CURRENT_TIMESTAMP)
               ON CONFLICT(user_id, key) DO UPDATE SET value = excluded.value, updated_at = CURRENT_TIMESTAMP`,
-        args: [userId, key, value]
-    });
+    args: [userId, key, value]
+  });
 }
 
 /**
@@ -56,23 +56,23 @@ export async function setUserSetting(userId, key, value) {
  * @param {Record<string, string>} settings
  */
 export async function setUserSettings(userId, settings) {
-    const db = getDb();
-    for (const [key, value] of Object.entries(settings)) {
-        await db.execute({
-            sql: `INSERT INTO user_settings (user_id, key, value, updated_at) VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+  const db = getDb();
+  for (const [key, value] of Object.entries(settings)) {
+    await db.execute({
+      sql: `INSERT INTO user_settings (user_id, key, value, updated_at) VALUES (?, ?, ?, CURRENT_TIMESTAMP)
                   ON CONFLICT(user_id, key) DO UPDATE SET value = excluded.value, updated_at = CURRENT_TIMESTAMP`,
-            args: [userId, key, value]
-        });
-    }
+      args: [userId, key, value]
+    });
+  }
 }
 
 // Setting keys
 export const SETTING_KEYS = {
-    GITHUB_REPO_OWNER: 'github_repo_owner',
-    GITHUB_REPO_NAME: 'github_repo_name',
-    GITHUB_REPO_BRANCH: 'github_repo_branch',
-    GITHUB_TOKEN: 'github_token',
-    APPMIXER_BASE_URL: 'appmixer_base_url',
-    APPMIXER_USERNAME: 'appmixer_username',
-    APPMIXER_PASSWORD: 'appmixer_password'
+  GITHUB_REPO_OWNER: 'github_repo_owner',
+  GITHUB_REPO_NAME: 'github_repo_name',
+  GITHUB_REPO_BRANCH: 'github_repo_branch',
+  GITHUB_TOKEN: 'github_token',
+  APPMIXER_BASE_URL: 'appmixer_base_url',
+  APPMIXER_USERNAME: 'appmixer_username',
+  APPMIXER_PASSWORD: 'appmixer_password'
 };

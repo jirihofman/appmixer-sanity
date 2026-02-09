@@ -82,9 +82,15 @@ export async function initializeDatabase() {
     WHERE github_issue IS NOT NULL AND github_issue != '' AND (github_issues IS NULL OR github_issues = '')
   `);
 
-  await client.execute(`CREATE INDEX IF NOT EXISTS idx_connectors_test_run ON connectors(test_run_id)`);
-  await client.execute(`CREATE INDEX IF NOT EXISTS idx_components_connector ON components(connector_id)`);
-  await client.execute(`CREATE INDEX IF NOT EXISTS idx_test_runs_created ON test_runs(created_at DESC)`);
+  await client.execute(
+    `CREATE INDEX IF NOT EXISTS idx_connectors_test_run ON connectors(test_run_id)`
+  );
+  await client.execute(
+    `CREATE INDEX IF NOT EXISTS idx_components_connector ON components(connector_id)`
+  );
+  await client.execute(
+    `CREATE INDEX IF NOT EXISTS idx_test_runs_created ON test_runs(created_at DESC)`
+  );
 
   // Settings table for app configuration (legacy global settings)
   await client.execute(`
@@ -106,5 +112,7 @@ export async function initializeDatabase() {
     )
   `);
 
-  await client.execute(`CREATE INDEX IF NOT EXISTS idx_user_settings_user ON user_settings(user_id)`);
+  await client.execute(
+    `CREATE INDEX IF NOT EXISTS idx_user_settings_user ON user_settings(user_id)`
+  );
 }

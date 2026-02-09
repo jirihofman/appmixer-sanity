@@ -80,7 +80,10 @@ export async function deleteTestRun(id) {
   cache.invalidatePrefix(`components:`);
 
   // Delete in order due to foreign keys (Turso may not have cascade enabled by default)
-  await getDb().execute({ sql: `DELETE FROM components WHERE connector_id IN (SELECT id FROM connectors WHERE test_run_id = ?)`, args: [id] });
+  await getDb().execute({
+    sql: `DELETE FROM components WHERE connector_id IN (SELECT id FROM connectors WHERE test_run_id = ?)`,
+    args: [id]
+  });
   await getDb().execute({ sql: `DELETE FROM connectors WHERE test_run_id = ?`, args: [id] });
   return getDb().execute({ sql: `DELETE FROM test_runs WHERE id = ?`, args: [id] });
 }
