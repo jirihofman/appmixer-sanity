@@ -11,19 +11,17 @@ const TOKEN_TTL = 55 * 60 * 1000; // 55 minutes
  * @returns {Promise<{baseUrl: string, username: string, password: string}>}
  */
 export async function getAppmixerConfig(userId) {
-  const settings = userId
-    ? await getUserSettings(userId, [
+    const settings = userId ? await getUserSettings(userId, [
         SETTING_KEYS.APPMIXER_BASE_URL,
         SETTING_KEYS.APPMIXER_USERNAME,
         SETTING_KEYS.APPMIXER_PASSWORD
-      ])
-    : {};
+    ]) : {};
 
-  return {
-    baseUrl: settings[SETTING_KEYS.APPMIXER_BASE_URL] || APPMIXER_BASE_URL || '',
-    username: settings[SETTING_KEYS.APPMIXER_USERNAME] || APPMIXER_USERNAME || '',
-    password: settings[SETTING_KEYS.APPMIXER_PASSWORD] || APPMIXER_PASSWORD || ''
-  };
+    return {
+        baseUrl: settings[SETTING_KEYS.APPMIXER_BASE_URL] || APPMIXER_BASE_URL || '',
+        username: settings[SETTING_KEYS.APPMIXER_USERNAME] || APPMIXER_USERNAME || '',
+        password: settings[SETTING_KEYS.APPMIXER_PASSWORD] || APPMIXER_PASSWORD || ''
+    };
 }
 
 /**
@@ -31,11 +29,11 @@ export async function getAppmixerConfig(userId) {
  * @param {string} userId - User ID (email)
  */
 export function clearAppmixerTokenCache(userId) {
-  if (userId) {
-    tokenCache.delete(userId);
-  } else {
-    tokenCache.clear();
-  }
+    if (userId) {
+        tokenCache.delete(userId);
+    } else {
+        tokenCache.clear();
+    }
 }
 
 /**
@@ -45,39 +43,39 @@ export function clearAppmixerTokenCache(userId) {
  * @returns {Promise<string>}
  */
 async function getAccessToken(userId) {
-  const config = await getAppmixerConfig(userId);
-  const configKey = `${config.baseUrl}:${config.username}`;
-  const cacheKey = `${userId}:${configKey}`;
+    const config = await getAppmixerConfig(userId);
+    const configKey = `${config.baseUrl}:${config.username}`;
+    const cacheKey = `${userId}:${configKey}`;
 
-  const cached = tokenCache.get(cacheKey);
-  if (cached && Date.now() < cached.expiry) {
-    return cached.token;
-  }
+    const cached = tokenCache.get(cacheKey);
+    if (cached && Date.now() < cached.expiry) {
+        return cached.token;
+    }
 
-  if (!config.baseUrl || !config.username || !config.password) {
-    throw new Error('Appmixer credentials not configured');
-  }
+    if (!config.baseUrl || !config.username || !config.password) {
+        throw new Error('Appmixer credentials not configured');
+    }
 
-  const response = await fetch(`${config.baseUrl}/user/auth`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      username: config.username,
-      password: config.password
-    })
-  });
+    const response = await fetch(`${config.baseUrl}/user/auth`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            username: config.username,
+            password: config.password
+        })
+    });
 
-  if (!response.ok) {
-    throw new Error(`Appmixer auth failed: ${response.status}`);
-  }
+    if (!response.ok) {
+        throw new Error(`Appmixer auth failed: ${response.status}`);
+    }
 
-  const data = await response.json();
-  tokenCache.set(cacheKey, {
-    token: data.token,
-    expiry: Date.now() + TOKEN_TTL
-  });
+    const data = await response.json();
+    tokenCache.set(cacheKey, {
+        token: data.token,
+        expiry: Date.now() + TOKEN_TTL
+    });
 
-  return data.token;
+    return data.token;
 }
 
 /**
@@ -86,20 +84,20 @@ async function getAccessToken(userId) {
  * @returns {Promise<Array<{flowId: string, name: string}>>}
  */
 export async function fetchE2EFlows(userId) {
-  const config = await getAppmixerConfig(userId);
-  const token = await getAccessToken(userId);
-  const response = await fetch(
-    `${config.baseUrl}/flows?filter=customFields.category:E2E_test_flow&projection=-thumbnail`,
-    {
-      headers: { Authorization: `Bearer ${token}` }
+    const config = await getAppmixerConfig(userId);
+    const token = await getAccessToken(userId);
+    const response = await fetch(
+        `${config.baseUrl}/flows?filter=customFields.category:E2E_test_flow&projection=-thumbnail`,
+        {
+            headers: { 'Authorization': `Bearer ${token}` }
+        }
+    );
+
+    if (!response.ok) {
+        throw new Error(`Failed to fetch E2E flows: ${response.status}`);
     }
-  );
 
-  if (!response.ok) {
-    throw new Error(`Failed to fetch E2E flows: ${response.status}`);
-  }
-
-  return response.json();
+    return response.json();
 }
 
 /**
@@ -109,22 +107,22 @@ export async function fetchE2EFlows(userId) {
  * @returns {Promise<Array<{flowId: string, name: string, url: string}>>}
  */
 export async function getE2EFlowsForConnector(userId, connectorName) {
-  const config = await getAppmixerConfig(userId);
-  // Extract short name (e.g., "appmixer.box" -> "box")
-  const shortName = connectorName.split('.').pop().toLowerCase();
+    const config = await getAppmixerConfig(userId);
+    // Extract short name (e.g., "appmixer.box" -> "box")
+    const shortName = connectorName.split('.').pop().toLowerCase();
 
-  const flows = await fetchE2EFlows(userId);
+    const flows = await fetchE2EFlows(userId);
 
-  // Build designer URL by replacing api. with my.
-  const designerUrl = config.baseUrl.replace('api', 'my');
+    // Build designer URL by replacing api. with my.
+    const designerUrl = config.baseUrl.replace('api', 'my');
 
-  return flows
-    .filter((flow) => flow.name?.toLowerCase().includes(shortName))
-    .map((flow) => ({
-      flowId: flow.flowId,
-      name: flow.name,
-      url: `${designerUrl}/designer/${flow.flowId}`
-    }));
+    return flows
+        .filter(flow => flow.name?.toLowerCase().includes(shortName))
+        .map(flow => ({
+            flowId: flow.flowId,
+            name: flow.name,
+            url: `${designerUrl}/designer/${flow.flowId}`
+        }));
 }
 
 /**
@@ -133,8 +131,8 @@ export async function getE2EFlowsForConnector(userId, connectorName) {
  * @returns {Promise<boolean>}
  */
 export async function isAppmixerConfigured(userId) {
-  const config = await getAppmixerConfig(userId);
-  return !!(config.baseUrl && config.username && config.password);
+    const config = await getAppmixerConfig(userId);
+    return !!(config.baseUrl && config.username && config.password);
 }
 
 /**
@@ -144,20 +142,20 @@ export async function isAppmixerConfigured(userId) {
  * @returns {Promise<Object>}
  */
 export async function fetchFlowById(userId, flowId) {
-  const config = await getAppmixerConfig(userId);
-  const token = await getAccessToken(userId);
-  const response = await fetch(
-    `${config.baseUrl}/flows/${flowId}?projection=-thumbnail,-stageChangeInfo,-started,-stopped`,
-    {
-      headers: { Authorization: `Bearer ${token}` }
+    const config = await getAppmixerConfig(userId);
+    const token = await getAccessToken(userId);
+    const response = await fetch(
+        `${config.baseUrl}/flows/${flowId}?projection=-thumbnail,-stageChangeInfo,-started,-stopped`,
+        {
+            headers: { 'Authorization': `Bearer ${token}` }
+        }
+    );
+
+    if (!response.ok) {
+        throw new Error(`Failed to fetch flow ${flowId}: ${response.status}`);
     }
-  );
 
-  if (!response.ok) {
-    throw new Error(`Failed to fetch flow ${flowId}: ${response.status}`);
-  }
-
-  return response.json();
+    return response.json();
 }
 
 /**
@@ -167,31 +165,30 @@ export async function fetchFlowById(userId, flowId) {
  * @returns {Object}
  */
 export function cleanFlowForComparison(flow) {
-  const cleaned = { ...flow };
+    const cleaned = { ...flow };
 
-  // Remove server-specific fields
-  delete cleaned.flowId;
-  delete cleaned.btime;
-  delete cleaned.mtime;
-  delete cleaned.userId;
-  delete cleaned.runtimeErrors;
-  delete cleaned.customFields;
-  delete cleaned.stage;
-  delete cleaned.description;
+    // Remove server-specific fields
+    delete cleaned.flowId;
+    delete cleaned.btime;
+    delete cleaned.mtime;
+    delete cleaned.userId;
+    delete cleaned.runtimeErrors;
+    delete cleaned.customFields;
+    delete cleaned.stage;
+    delete cleaned.description;
 
-  // Clean ProcessE2EResults component - remove server-specific store IDs
-  if (cleaned.flow) {
-    const processE2EComponent = Object.values(cleaned.flow).find(
-      (item) => item.type === 'appmixer.utils.test.ProcessE2EResults'
-    );
+    // Clean ProcessE2EResults component - remove server-specific store IDs
+    if (cleaned.flow) {
+        const processE2EComponent = Object.values(cleaned.flow)
+            .find(item => item.type === 'appmixer.utils.test.ProcessE2EResults');
 
-    if (processE2EComponent?.config?.properties) {
-      delete processE2EComponent.config.properties.failedStoreId;
-      delete processE2EComponent.config.properties.successStoreId;
+        if (processE2EComponent?.config?.properties) {
+            delete processE2EComponent.config.properties.failedStoreId;
+            delete processE2EComponent.config.properties.successStoreId;
+        }
     }
-  }
 
-  return cleaned;
+    return cleaned;
 }
 
 /**
@@ -200,8 +197,8 @@ export function cleanFlowForComparison(flow) {
  * @returns {Promise<string>}
  */
 export async function getDesignerBaseUrl(userId) {
-  const config = await getAppmixerConfig(userId);
-  return config.baseUrl.replace('api.', 'my.');
+    const config = await getAppmixerConfig(userId);
+    return config.baseUrl.replace('api.', 'my.');
 }
 
 /**
@@ -211,16 +208,19 @@ export async function getDesignerBaseUrl(userId) {
  * @returns {Promise<void>}
  */
 export async function deleteFlow(userId, flowId) {
-  const config = await getAppmixerConfig(userId);
-  const token = await getAccessToken(userId);
-  const response = await fetch(`${config.baseUrl}/flows/${flowId}`, {
-    method: 'DELETE',
-    headers: { Authorization: `Bearer ${token}` }
-  });
+    const config = await getAppmixerConfig(userId);
+    const token = await getAccessToken(userId);
+    const response = await fetch(
+        `${config.baseUrl}/flows/${flowId}`,
+        {
+            method: 'DELETE',
+            headers: { 'Authorization': `Bearer ${token}` }
+        }
+    );
 
-  if (!response.ok) {
-    throw new Error(`Failed to delete flow ${flowId}: ${response.status}`);
-  }
+    if (!response.ok) {
+        throw new Error(`Failed to delete flow ${flowId}: ${response.status}`);
+    }
 }
 
 /**
@@ -229,28 +229,22 @@ export async function deleteFlow(userId, flowId) {
  * @returns {Promise<{baseUrl: string, username: string, hasEnvCredentials: boolean, hasCustomCredentials: boolean}>}
  */
 export async function getAppmixerInfo(userId) {
-  const config = await getAppmixerConfig(userId);
-  const settings = userId
-    ? await getUserSettings(userId, [
+    const config = await getAppmixerConfig(userId);
+    const settings = userId ? await getUserSettings(userId, [
         SETTING_KEYS.APPMIXER_BASE_URL,
         SETTING_KEYS.APPMIXER_USERNAME,
         SETTING_KEYS.APPMIXER_PASSWORD
-      ])
-    : {};
+    ]) : {};
 
-  const hasEnvCredentials = !!(APPMIXER_BASE_URL && APPMIXER_USERNAME && APPMIXER_PASSWORD);
-  const hasCustomCredentials = !!(
-    settings[SETTING_KEYS.APPMIXER_BASE_URL] &&
-    settings[SETTING_KEYS.APPMIXER_USERNAME] &&
-    settings[SETTING_KEYS.APPMIXER_PASSWORD]
-  );
+    const hasEnvCredentials = !!(APPMIXER_BASE_URL && APPMIXER_USERNAME && APPMIXER_PASSWORD);
+    const hasCustomCredentials = !!(settings[SETTING_KEYS.APPMIXER_BASE_URL] && settings[SETTING_KEYS.APPMIXER_USERNAME] && settings[SETTING_KEYS.APPMIXER_PASSWORD]);
 
-  return {
-    baseUrl: config.baseUrl,
-    username: config.username,
-    hasEnvCredentials,
-    hasCustomCredentials
-  };
+    return {
+        baseUrl: config.baseUrl,
+        username: config.username,
+        hasEnvCredentials,
+        hasCustomCredentials
+    };
 }
 
 /**
@@ -260,22 +254,25 @@ export async function getAppmixerInfo(userId) {
  * @returns {Promise<{flowId: string, ticket?: string}>}
  */
 export async function startFlow(userId, flowId) {
-  const config = await getAppmixerConfig(userId);
-  const token = await getAccessToken(userId);
-  const response = await fetch(`${config.baseUrl}/flows/${flowId}/coordinator`, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${token}`,
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify({ command: 'start' })
-  });
+    const config = await getAppmixerConfig(userId);
+    const token = await getAccessToken(userId);
+    const response = await fetch(
+        `${config.baseUrl}/flows/${flowId}/coordinator`,
+        {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ command: 'start' })
+        }
+    );
 
-  if (!response.ok) {
-    throw new Error(`Failed to start flow ${flowId}: ${response.status}`);
-  }
+    if (!response.ok) {
+        throw new Error(`Failed to start flow ${flowId}: ${response.status}`);
+    }
 
-  return response.json();
+    return response.json();
 }
 
 /**
@@ -285,20 +282,23 @@ export async function startFlow(userId, flowId) {
  * @returns {Promise<{flowId: string, ticket?: string}>}
  */
 export async function stopFlow(userId, flowId) {
-  const config = await getAppmixerConfig(userId);
-  const token = await getAccessToken(userId);
-  const response = await fetch(`${config.baseUrl}/flows/${flowId}/coordinator`, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${token}`,
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify({ command: 'stop' })
-  });
+    const config = await getAppmixerConfig(userId);
+    const token = await getAccessToken(userId);
+    const response = await fetch(
+        `${config.baseUrl}/flows/${flowId}/coordinator`,
+        {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ command: 'stop' })
+        }
+    );
 
-  if (!response.ok) {
-    throw new Error(`Failed to stop flow ${flowId}: ${response.status}`);
-  }
+    if (!response.ok) {
+        throw new Error(`Failed to stop flow ${flowId}: ${response.status}`);
+    }
 
-  return response.json();
+    return response.json();
 }
