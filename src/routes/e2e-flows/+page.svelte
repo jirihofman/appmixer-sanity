@@ -35,6 +35,23 @@
   // Start/Stop flow state
   let togglingFlowIds = $state(new Set());
 
+  // Copy to clipboard state
+  let copiedFlowId = $state(null);
+
+  // Copy flow name to clipboard
+  async function copyFlowNameToClipboard(flowId, flowName) {
+    try {
+      await navigator.clipboard.writeText(flowName);
+      copiedFlowId = flowId;
+      // Reset after 2 seconds
+      setTimeout(() => {
+        copiedFlowId = null;
+      }, 2000);
+    } catch (e) {
+      console.error('Failed to copy to clipboard:', e);
+    }
+  }
+
   // Check if a flow can be selected (only modified and server_only)
   function isSelectable(flow) {
     return flow.syncStatus === 'modified' || flow.syncStatus === 'server_only';
@@ -697,7 +714,17 @@
                 {/if}
               </TableCell>
               <TableCell>
-                <span class="font-medium">{flow.name}</span>
+                <button
+                  type="button"
+                  onclick={() => copyFlowNameToClipboard(flow.flowId, flow.name)}
+                  class="font-medium hover:text-blue-600 hover:underline cursor-pointer transition-colors"
+                  title="Click to copy flow name"
+                >
+                  {flow.name}
+                  {#if copiedFlowId === flow.flowId}
+                    <span class="ml-2 text-xs text-green-600">✓ Copied</span>
+                  {/if}
+                </button>
               </TableCell>
               <TableCell>
                 {#if flow.running}
