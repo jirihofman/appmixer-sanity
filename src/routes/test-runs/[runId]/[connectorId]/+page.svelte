@@ -199,6 +199,11 @@
             >
               {flow.name}
             </a>
+            {#if flow.stage === 'running'}
+              <span class="inline-flex items-center px-1.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">Running</span>
+            {:else}
+              <span class="inline-flex items-center px-1.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-600">Stopped</span>
+            {/if}
           </li>
         {/each}
       </ul>

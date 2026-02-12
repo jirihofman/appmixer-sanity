@@ -1,7 +1,7 @@
 <script>
   import { Progress } from '$lib/components/ui/progress';
   import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '$lib/components/ui/table';
-  import { ArrowLeft } from 'lucide-svelte';
+  import { ArrowLeft, ChevronRight, ChevronDown } from 'lucide-svelte';
 
   let { data } = $props();
 
@@ -19,7 +19,7 @@
 
   function formatDate(/** @type {string} */ dateStr) {
     if (!dateStr) return '-';
-    const date = new Date(dateStr);
+    const date = new Date(dateStr + 'T00:00:00');
     return date.toLocaleDateString('en-US', {
       weekday: 'short',
       month: 'short',
@@ -28,22 +28,112 @@
     });
   }
 
-  // Calculate cumulative totals for the daily tables
+  function formatDateShort(/** @type {string} */ dateStr) {
+    const date = new Date(dateStr + 'T00:00:00');
+    return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  }
+
+  /** Check if a date string (YYYY-MM-DD) falls on a weekend */
+  function isWeekend(/** @type {string} */ dateStr) {
+    const date = new Date(dateStr + 'T00:00:00');
+    const day = date.getDay();
+    return day === 0 || day === 6;
+  }
+
+  /**
+   * Fill in missing dates between the first entry and today.
+   * @param {any[]} rows - rows with a `date` field
+   * @param {Record<string, any>} emptyRow - template for days with no data
+   */
+  function fillDateGaps(rows, emptyRow) {
+    if (rows.length === 0) return [];
+    const byDate = new Map(rows.map(r => [r.date, r]));
+    const start = new Date(rows[0].date + 'T00:00:00');
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const end = new Date(rows[rows.length - 1].date + 'T00:00:00') > today
+      ? new Date(rows[rows.length - 1].date + 'T00:00:00')
+      : today;
+    const filled = [];
+    const current = new Date(start);
+    while (current <= end) {
+      const key = current.toISOString().slice(0, 10);
+      filled.push(byDate.get(key) || { ...emptyRow, date: key });
+      current.setDate(current.getDate() + 1);
+    }
+    return filled;
+  }
+
+  /**
+   * Group consecutive zero-progress days into collapsible sections.
+   * @param {any[]} days - flat array of day rows with cumulative
+   * @param {(day: any) => boolean} isZero - predicate for zero-progress day
+   * @returns {Array<{type: 'day', day: any} | {type: 'gap', days: any[], weekdays: number, id: string}>}
+   */
+  function groupZeroDays(days, isZero) {
+    /** @type {Array<{type: 'day', day: any} | {type: 'gap', days: any[], weekdays: number, id: string}>} */
+    const groups = [];
+    let i = 0;
+    while (i < days.length) {
+      if (isZero(days[i])) {
+        const gapDays = [];
+        while (i < days.length && isZero(days[i])) {
+          gapDays.push(days[i]);
+          i++;
+        }
+        const weekdays = gapDays.filter(d => !isWeekend(d.date)).length;
+        groups.push({ type: 'gap', days: gapDays, weekdays, id: gapDays[0].date });
+      } else {
+        groups.push({ type: 'day', day: days[i] });
+        i++;
+      }
+    }
+    return groups;
+  }
+
+  // Calculate cumulative totals for the daily tables (with gaps filled)
   const cumulativeComponents = $derived(() => {
+    const filled = fillDateGaps(data.report.dailyComponents, {
+      components_tested: 0, components_ok: 0, components_fail: 0
+    });
     let cumulative = 0;
-    return data.report.dailyComponents.map((/** @type {any} */ day) => {
+    return filled.map((/** @type {any} */ day) => {
       cumulative += Number(day.components_tested);
       return { ...day, cumulative };
     });
   });
 
   const cumulativeConnectors = $derived(() => {
+    const filled = fillDateGaps(data.report.dailyConnectors, {
+      connectors_completed: 0, connectors_ok: 0, connectors_fail: 0, connectors_blocked: 0
+    });
     let cumulative = 0;
-    return data.report.dailyConnectors.map((/** @type {any} */ day) => {
+    return filled.map((/** @type {any} */ day) => {
       cumulative += Number(day.connectors_completed);
       return { ...day, cumulative };
     });
   });
+
+  const groupedComponents = $derived(
+    groupZeroDays(cumulativeComponents(), (d) => Number(d.components_tested) === 0)
+  );
+
+  const groupedConnectors = $derived(
+    groupZeroDays(cumulativeConnectors(), (d) => Number(d.connectors_completed) === 0)
+  );
+
+  /** @type {Set<string>} */
+  let expandedGaps = $state(new Set());
+
+  /** @param {string} id */
+  function toggleGap(id) {
+    if (expandedGaps.has(id)) {
+      expandedGaps.delete(id);
+    } else {
+      expandedGaps.add(id);
+    }
+    expandedGaps = new Set(expandedGaps);
+  }
 </script>
 
 <svelte:head>
@@ -116,17 +206,50 @@
           </TableRow>
         </TableHeader>
         <TableBody>
-          {#each cumulativeComponents() as day}
-            <TableRow>
-              <TableCell class="font-medium">{formatDate(day.date)}</TableCell>
-              <TableCell class="text-right">{day.components_tested}</TableCell>
-              <TableCell class="text-right text-green-600">{day.components_ok}</TableCell>
-              <TableCell class="text-right text-red-600">{day.components_fail}</TableCell>
-              <TableCell class="text-right">{day.cumulative}</TableCell>
-              <TableCell class="text-right text-muted-foreground">
-                {((day.cumulative / data.report.totals.total_components) * 100).toFixed(1)}%
-              </TableCell>
-            </TableRow>
+          {#each groupedComponents as group}
+            {#if group.type === 'day'}
+              <TableRow class={isWeekend(group.day.date) ? 'bg-muted/50' : ''}>
+                <TableCell class="font-medium">{formatDate(group.day.date)}</TableCell>
+                <TableCell class="text-right">{group.day.components_tested}</TableCell>
+                <TableCell class="text-right text-green-600">{group.day.components_ok}</TableCell>
+                <TableCell class="text-right text-red-600">{group.day.components_fail}</TableCell>
+                <TableCell class="text-right">{group.day.cumulative}</TableCell>
+                <TableCell class="text-right text-muted-foreground">
+                  {((group.day.cumulative / data.report.totals.total_components) * 100).toFixed(1)}%
+                </TableCell>
+              </TableRow>
+            {:else}
+              <TableRow
+                class="cursor-pointer hover:bg-muted/30"
+                onclick={() => toggleGap('comp-' + group.id)}
+              >
+                <TableCell colspan={6} class="text-muted-foreground text-sm py-1.5">
+                  <span class="inline-flex items-center gap-1">
+                    {#if expandedGaps.has('comp-' + group.id)}
+                      <ChevronDown class="w-3.5 h-3.5" />
+                    {:else}
+                      <ChevronRight class="w-3.5 h-3.5" />
+                    {/if}
+                    {group.weekdays} {group.weekdays === 1 ? 'day' : 'days'} with no progress
+                    <span class="text-xs">({formatDateShort(group.days[0].date)} &ndash; {formatDateShort(group.days[group.days.length - 1].date)})</span>
+                  </span>
+                </TableCell>
+              </TableRow>
+              {#if expandedGaps.has('comp-' + group.id)}
+                {#each group.days as day}
+                  <TableRow class="{isWeekend(day.date) ? 'bg-muted/50' : ''} opacity-60">
+                    <TableCell class="font-medium">{formatDate(day.date)}</TableCell>
+                    <TableCell class="text-right text-muted-foreground">0</TableCell>
+                    <TableCell class="text-right text-muted-foreground">0</TableCell>
+                    <TableCell class="text-right text-muted-foreground">0</TableCell>
+                    <TableCell class="text-right">{day.cumulative}</TableCell>
+                    <TableCell class="text-right text-muted-foreground">
+                      {((day.cumulative / data.report.totals.total_components) * 100).toFixed(1)}%
+                    </TableCell>
+                  </TableRow>
+                {/each}
+              {/if}
+            {/if}
           {/each}
         </TableBody>
       </Table>
@@ -152,18 +275,52 @@
           </TableRow>
         </TableHeader>
         <TableBody>
-          {#each cumulativeConnectors() as day}
-            <TableRow>
-              <TableCell class="font-medium">{formatDate(day.date)}</TableCell>
-              <TableCell class="text-right">{day.connectors_completed}</TableCell>
-              <TableCell class="text-right text-green-600">{day.connectors_ok}</TableCell>
-              <TableCell class="text-right text-red-600">{day.connectors_fail}</TableCell>
-              <TableCell class="text-right text-yellow-600">{day.connectors_blocked}</TableCell>
-              <TableCell class="text-right">{day.cumulative}</TableCell>
-              <TableCell class="text-right text-muted-foreground">
-                {((day.cumulative / data.report.totals.total_connectors) * 100).toFixed(1)}%
-              </TableCell>
-            </TableRow>
+          {#each groupedConnectors as group}
+            {#if group.type === 'day'}
+              <TableRow class={isWeekend(group.day.date) ? 'bg-muted/50' : ''}>
+                <TableCell class="font-medium">{formatDate(group.day.date)}</TableCell>
+                <TableCell class="text-right">{group.day.connectors_completed}</TableCell>
+                <TableCell class="text-right text-green-600">{group.day.connectors_ok}</TableCell>
+                <TableCell class="text-right text-red-600">{group.day.connectors_fail}</TableCell>
+                <TableCell class="text-right text-yellow-600">{group.day.connectors_blocked}</TableCell>
+                <TableCell class="text-right">{group.day.cumulative}</TableCell>
+                <TableCell class="text-right text-muted-foreground">
+                  {((group.day.cumulative / data.report.totals.total_connectors) * 100).toFixed(1)}%
+                </TableCell>
+              </TableRow>
+            {:else}
+              <TableRow
+                class="cursor-pointer hover:bg-muted/30"
+                onclick={() => toggleGap('conn-' + group.id)}
+              >
+                <TableCell colspan={7} class="text-muted-foreground text-sm py-1.5">
+                  <span class="inline-flex items-center gap-1">
+                    {#if expandedGaps.has('conn-' + group.id)}
+                      <ChevronDown class="w-3.5 h-3.5" />
+                    {:else}
+                      <ChevronRight class="w-3.5 h-3.5" />
+                    {/if}
+                    {group.weekdays} {group.weekdays === 1 ? 'day' : 'days'} with no progress
+                    <span class="text-xs">({formatDateShort(group.days[0].date)} &ndash; {formatDateShort(group.days[group.days.length - 1].date)})</span>
+                  </span>
+                </TableCell>
+              </TableRow>
+              {#if expandedGaps.has('conn-' + group.id)}
+                {#each group.days as day}
+                  <TableRow class="{isWeekend(day.date) ? 'bg-muted/50' : ''} opacity-60">
+                    <TableCell class="font-medium">{formatDate(day.date)}</TableCell>
+                    <TableCell class="text-right text-muted-foreground">0</TableCell>
+                    <TableCell class="text-right text-muted-foreground">0</TableCell>
+                    <TableCell class="text-right text-muted-foreground">0</TableCell>
+                    <TableCell class="text-right text-muted-foreground">0</TableCell>
+                    <TableCell class="text-right">{day.cumulative}</TableCell>
+                    <TableCell class="text-right text-muted-foreground">
+                      {((day.cumulative / data.report.totals.total_connectors) * 100).toFixed(1)}%
+                    </TableCell>
+                  </TableRow>
+                {/each}
+              {/if}
+            {/if}
           {/each}
         </TableBody>
       </Table>

@@ -5,13 +5,30 @@
   import { Badge } from '$lib/components/ui/badge';
   import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '$lib/components/ui/dialog';
   import { Checkbox } from '$lib/components/ui/checkbox';
-  import { invalidateAll } from '$app/navigation';
+  import { invalidateAll, goto } from '$app/navigation';
+  import { page } from '$app/state';
 
   let { data } = $props();
 
-  let searchQuery = $state('');
-  let connectorFilter = $state('');
-  let syncFilter = $state('');
+  // Initialize filters from URL search params
+  let searchQuery = $state(page.url.searchParams.get('search') || '');
+  let connectorFilter = $state(page.url.searchParams.get('connector') || '');
+  let stageFilter = $state(page.url.searchParams.get('stage') || '');
+  let syncFilter = $state(page.url.searchParams.get('sync') || '');
+
+  // Sync filter state to URL
+  $effect(() => {
+    const params = new URLSearchParams();
+    if (searchQuery) params.set('search', searchQuery);
+    if (connectorFilter) params.set('connector', connectorFilter);
+    if (stageFilter) params.set('stage', stageFilter);
+    if (syncFilter) params.set('sync', syncFilter);
+    const qs = params.toString();
+    const newUrl = qs ? `?${qs}` : page.url.pathname;
+    if (page.url.search !== (qs ? `?${qs}` : '')) {
+      goto(newUrl, { replaceState: true, keepFocus: true, noScroll: true });
+    }
+  });
 
   // Flow selection state
   let selectedFlowIds = $state(new Set());
@@ -84,7 +101,7 @@
   // Open sync dialog
   function openSyncDialog() {
     const count = selectedFlowIds.size;
-    syncPrTitle = `Sync ${count} E2E flow${count > 1 ? 's' : ''} from Appmixer`;
+    syncPrTitle = `Sync E2E flow${count > 1 ? 's' : ''}`;
     syncPrDescription = '';
     syncTargetBranch = data.githubInfo?.branch || 'dev';
     syncError = '';
@@ -370,9 +387,11 @@
 
       const matchesConnector = !connectorFilter || flow.connector === connectorFilter;
 
+      const matchesStage = !stageFilter || flow.stage === stageFilter;
+
       const matchesSync = !syncFilter || flow.syncStatus === syncFilter;
 
-      return matchesSearch && matchesConnector && matchesSync;
+      return matchesSearch && matchesConnector && matchesStage && matchesSync;
     })
   );
 
@@ -543,6 +562,14 @@
         {/each}
       </select>
       <select
+        bind:value={stageFilter}
+        class="px-3 py-2 border rounded-md bg-background text-sm"
+      >
+        <option value="">All Statuses</option>
+        <option value="running">Running</option>
+        <option value="stopped">Stopped</option>
+      </select>
+      <select
         bind:value={syncFilter}
         class="px-3 py-2 border rounded-md bg-background text-sm"
       >
@@ -579,6 +606,7 @@
             </TableHead>
             <TableHead>Connector</TableHead>
             <TableHead>Flow Name</TableHead>
+            <TableHead>Status</TableHead>
             <TableHead>Sync Status</TableHead>
             <TableHead>Actions</TableHead>
           </TableRow>
@@ -605,6 +633,13 @@
               </TableCell>
               <TableCell>
                 <span class="font-medium">{flow.name}</span>
+              </TableCell>
+              <TableCell>
+                {#if flow.stage === 'running'}
+                  <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border bg-green-100 text-green-800 border-green-200">Running</span>
+                {:else}
+                  <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border bg-gray-100 text-gray-800 border-gray-200">Stopped</span>
+                {/if}
               </TableCell>
               <TableCell>
                 {@const config = syncStatusConfig[flow.syncStatus] || syncStatusConfig.error}

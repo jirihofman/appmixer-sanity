@@ -118,6 +118,7 @@ export async function load({ locals }) {
                     name: flow.name,
                     connector: extractConnectorFromFlowName(flow.name),
                     url: `${designerBaseUrl}/designer/${flow.flowId}`,
+                    stage: flow.stage || 'stopped',
                     createdAt: flow.btime,
                     updatedAt: flow.mtime,
                     syncStatus,

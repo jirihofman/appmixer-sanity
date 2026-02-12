@@ -121,6 +121,7 @@ export async function getE2EFlowsForConnector(userId, connectorName) {
         .map(flow => ({
             flowId: flow.flowId,
             name: flow.name,
+            stage: flow.stage || 'stopped',
             url: `${designerUrl}/designer/${flow.flowId}`
         }));
 }
