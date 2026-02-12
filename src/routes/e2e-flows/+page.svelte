@@ -5,30 +5,14 @@
   import { Badge } from '$lib/components/ui/badge';
   import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '$lib/components/ui/dialog';
   import { Checkbox } from '$lib/components/ui/checkbox';
-  import { invalidateAll, goto } from '$app/navigation';
-  import { page } from '$app/state';
+  import { invalidateAll } from '$app/navigation';
 
   let { data } = $props();
 
-  // Initialize filters from URL search params
-  let searchQuery = $state(page.url.searchParams.get('search') || '');
-  let connectorFilter = $state(page.url.searchParams.get('connector') || '');
-  let stageFilter = $state(page.url.searchParams.get('stage') || '');
-  let syncFilter = $state(page.url.searchParams.get('sync') || '');
-
-  // Sync filter state to URL
-  $effect(() => {
-    const params = new URLSearchParams();
-    if (searchQuery) params.set('search', searchQuery);
-    if (connectorFilter) params.set('connector', connectorFilter);
-    if (stageFilter) params.set('stage', stageFilter);
-    if (syncFilter) params.set('sync', syncFilter);
-    const qs = params.toString();
-    const newUrl = qs ? `?${qs}` : page.url.pathname;
-    if (page.url.search !== (qs ? `?${qs}` : '')) {
-      goto(newUrl, { replaceState: true, keepFocus: true, noScroll: true });
-    }
-  });
+  let searchQuery = $state('');
+  let connectorFilter = $state('');
+  let syncFilter = $state('');
+  let runningFilter = $state('');
 
   // Flow selection state
   let selectedFlowIds = $state(new Set());
@@ -101,7 +85,7 @@
   // Open sync dialog
   function openSyncDialog() {
     const count = selectedFlowIds.size;
-    syncPrTitle = `Sync E2E flow${count > 1 ? 's' : ''}`;
+    syncPrTitle = `Sync ${count} E2E flow${count > 1 ? 's' : ''} from Appmixer`;
     syncPrDescription = '';
     syncTargetBranch = data.githubInfo?.branch || 'dev';
     syncError = '';
@@ -387,11 +371,13 @@
 
       const matchesConnector = !connectorFilter || flow.connector === connectorFilter;
 
-      const matchesStage = !stageFilter || flow.stage === stageFilter;
-
       const matchesSync = !syncFilter || flow.syncStatus === syncFilter;
 
-      return matchesSearch && matchesConnector && matchesStage && matchesSync;
+      const matchesRunning = !runningFilter ||
+        (runningFilter === 'running' && flow.running) ||
+        (runningFilter === 'stopped' && !flow.running);
+
+      return matchesSearch && matchesConnector && matchesSync && matchesRunning;
     })
   );
 
@@ -497,14 +483,32 @@
     </div>
   {:else}
     <!-- Stats -->
-    <div class="grid grid-cols-2 md:grid-cols-5 gap-4">
+    <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4">
       <button
         type="button"
-        onclick={() => syncFilter = ''}
-        class="border rounded-lg p-4 text-left hover:bg-muted/50 transition-colors cursor-pointer {syncFilter === '' ? 'ring-2 ring-primary' : ''}"
+        onclick={() => { syncFilter = ''; runningFilter = ''; }}
+        class="border rounded-lg p-4 text-left hover:bg-muted/50 transition-colors cursor-pointer {syncFilter === '' && runningFilter === '' ? 'ring-2 ring-primary' : ''}"
       >
         <div class="text-2xl font-bold">{data.stats.total}</div>
         <div class="text-sm text-muted-foreground">Total Flows</div>
+      </button>
+      <button
+        type="button"
+        onclick={() => runningFilter = runningFilter === 'running' ? '' : 'running'}
+        class="border rounded-lg p-4 bg-emerald-50 text-left hover:bg-emerald-100 transition-colors cursor-pointer {runningFilter === 'running' ? 'ring-2 ring-emerald-500' : ''}"
+      >
+        <div class="text-2xl font-bold text-emerald-700">{data.stats.running}</div>
+        <div class="text-sm font-medium text-emerald-600">Running</div>
+        <div class="text-xs text-emerald-600/80 mt-1">Flow is currently running</div>
+      </button>
+      <button
+        type="button"
+        onclick={() => runningFilter = runningFilter === 'stopped' ? '' : 'stopped'}
+        class="border rounded-lg p-4 bg-gray-50 text-left hover:bg-gray-100 transition-colors cursor-pointer {runningFilter === 'stopped' ? 'ring-2 ring-gray-400' : ''}"
+      >
+        <div class="text-2xl font-bold text-gray-700">{data.stats.stopped}</div>
+        <div class="text-sm font-medium text-gray-600">Stopped</div>
+        <div class="text-xs text-gray-600/80 mt-1">Flow is not running</div>
       </button>
       <button
         type="button"
@@ -562,7 +566,7 @@
         {/each}
       </select>
       <select
-        bind:value={stageFilter}
+        bind:value={runningFilter}
         class="px-3 py-2 border rounded-md bg-background text-sm"
       >
         <option value="">All Statuses</option>
@@ -635,10 +639,14 @@
                 <span class="font-medium">{flow.name}</span>
               </TableCell>
               <TableCell>
-                {#if flow.stage === 'running'}
-                  <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border bg-green-100 text-green-800 border-green-200">Running</span>
+                {#if flow.running}
+                  <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border bg-emerald-100 text-emerald-800 border-emerald-200">
+                    Running
+                  </span>
                 {:else}
-                  <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border bg-gray-100 text-gray-800 border-gray-200">Stopped</span>
+                  <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border bg-gray-100 text-gray-600 border-gray-200">
+                    Stopped
+                  </span>
                 {/if}
               </TableCell>
               <TableCell>
