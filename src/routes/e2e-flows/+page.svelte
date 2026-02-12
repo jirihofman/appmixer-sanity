@@ -6,16 +6,80 @@
   import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '$lib/components/ui/dialog';
   import { Checkbox } from '$lib/components/ui/checkbox';
   import { invalidateAll } from '$app/navigation';
+  import { ExternalLink, Github, Trash2, FileDiff, Play, Square } from 'lucide-svelte';
 
   let { data } = $props();
+
+  const PAGE_SIZE = 16;
 
   let searchQuery = $state('');
   let connectorFilter = $state('');
   let syncFilter = $state('');
   let runningFilter = $state('');
+  let currentPage = $state(1);
 
   // Flow selection state
   let selectedFlowIds = $state(new Set());
+
+  // Sync status deferred loading
+  /** @type {Record<string, {syncStatus: string, githubUrl: string|null, githubPath: string|null}>} */
+  let syncStatuses = $state({});
+  let syncStatusLoading = $state(false);
+
+  // Merge sync statuses into flows
+  const flows = $derived(
+    data.flows.map(f => {
+      const status = syncStatuses[f.flowId];
+      if (status) {
+        return { ...f, ...status };
+      }
+      return f;
+    })
+  );
+
+  // Compute stats from merged flows
+  const stats = $derived({
+    total: flows.length,
+    running: flows.filter(f => f.running).length,
+    stopped: flows.filter(f => !f.running).length,
+    match: flows.filter(f => f.syncStatus === 'match').length,
+    modified: flows.filter(f => f.syncStatus === 'modified').length,
+    serverOnly: flows.filter(f => f.syncStatus === 'server_only').length,
+    error: flows.filter(f => f.syncStatus === 'error').length
+  });
+
+  // Fetch sync statuses lazily after page renders
+  async function loadSyncStatuses() {
+    if (!data.flows.length) return;
+
+    syncStatusLoading = true;
+    try {
+      const response = await fetch('/api/e2e-flows/sync-status', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          flows: data.flows.map(f => ({ flowId: f.flowId, name: f.name }))
+        })
+      });
+
+      if (response.ok) {
+        const result = await response.json();
+        syncStatuses = result.statuses;
+      }
+    } catch (e) {
+      console.error('Failed to load sync statuses:', e);
+    } finally {
+      syncStatusLoading = false;
+    }
+  }
+
+  // Load sync statuses when data changes (initial load + after invalidateAll)
+  $effect(() => {
+    // Access data.flows to track dependency
+    if (data.flows.length > 0) {
+      loadSyncStatuses();
+    }
+  });
 
   // Sync dialog state
   let showSyncDialog = $state(false);
@@ -32,6 +96,137 @@
   let isDeleting = $state(false);
   let deleteError = $state('');
 
+  // Toggle (start/stop) state - track which flows are currently toggling
+  /** @type {Set<string>} */
+  let togglingFlowIds = $state(new Set());
+
+  async function toggleFlow(flow) {
+    const action = flow.running ? 'stop' : 'start';
+    const newSet = new Set(togglingFlowIds);
+    newSet.add(flow.flowId);
+    togglingFlowIds = newSet;
+
+    try {
+      const response = await fetch('/api/e2e-flows/toggle', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ flowId: flow.flowId, action })
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.message || `Failed to ${action} flow`);
+      }
+
+      await invalidateAll();
+    } catch (e) {
+      console.error(`Failed to ${action} flow:`, e);
+      alert(`Failed to ${action} flow: ${e.message}`);
+    } finally {
+      const cleanup = new Set(togglingFlowIds);
+      cleanup.delete(flow.flowId);
+      togglingFlowIds = cleanup;
+    }
+  }
+
+  // Diff dialog state
+  let showDiffDialog = $state(false);
+  let diffFlow = $state(null);
+  let isDiffLoading = $state(false);
+  let diffError = $state('');
+  let diffData = $state(null);
+
+  async function openDiff(flow) {
+    diffFlow = flow;
+    diffError = '';
+    diffData = null;
+    showDiffDialog = true;
+    isDiffLoading = true;
+
+    try {
+      const response = await fetch('/api/e2e-flows/diff', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ flowId: flow.flowId, flowName: flow.name })
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.message || `Failed to load diff: ${response.status}`);
+      }
+
+      diffData = await response.json();
+    } catch (e) {
+      diffError = e.message || 'Failed to load diff';
+    } finally {
+      isDiffLoading = false;
+    }
+  }
+
+  /**
+   * Compute a simple line-based unified diff between two strings
+   */
+  function computeDiff(oldText, newText) {
+    const oldLines = oldText.split('\n');
+    const newLines = newText.split('\n');
+    const result = [];
+    let oi = 0, ni = 0;
+
+    // Simple LCS-based diff
+    const lcs = buildLCS(oldLines, newLines);
+    let li = 0;
+    oi = 0;
+    ni = 0;
+
+    while (oi < oldLines.length || ni < newLines.length) {
+      if (li < lcs.length && oi < oldLines.length && ni < newLines.length && oldLines[oi] === lcs[li] && newLines[ni] === lcs[li]) {
+        result.push({ type: 'context', line: oldLines[oi] });
+        oi++; ni++; li++;
+      } else if (li < lcs.length && ni < newLines.length && newLines[ni] === lcs[li]) {
+        result.push({ type: 'removed', line: oldLines[oi] });
+        oi++;
+      } else if (li < lcs.length && oi < oldLines.length && oldLines[oi] === lcs[li]) {
+        result.push({ type: 'added', line: newLines[ni] });
+        ni++;
+      } else if (oi < oldLines.length && (li >= lcs.length || oldLines[oi] !== lcs[li])) {
+        result.push({ type: 'removed', line: oldLines[oi] });
+        oi++;
+      } else if (ni < newLines.length && (li >= lcs.length || newLines[ni] !== lcs[li])) {
+        result.push({ type: 'added', line: newLines[ni] });
+        ni++;
+      }
+    }
+
+    return result;
+  }
+
+  function buildLCS(a, b) {
+    const m = a.length, n = b.length;
+    // For very large files, skip LCS and show full replace
+    if (m * n > 2_000_000) {
+      return [];
+    }
+    const dp = Array.from({ length: m + 1 }, () => new Array(n + 1).fill(0));
+    for (let i = 1; i <= m; i++) {
+      for (let j = 1; j <= n; j++) {
+        dp[i][j] = a[i - 1] === b[j - 1] ? dp[i - 1][j - 1] + 1 : Math.max(dp[i - 1][j], dp[i][j - 1]);
+      }
+    }
+    const result = [];
+    let i = m, j = n;
+    while (i > 0 && j > 0) {
+      if (a[i - 1] === b[j - 1]) {
+        result.unshift(a[i - 1]);
+        i--; j--;
+      } else if (dp[i - 1][j] > dp[i][j - 1]) {
+        i--;
+      } else {
+        j--;
+      }
+    }
+    return result;
+  }
+
   // Check if a flow can be selected (only modified and server_only)
   function isSelectable(flow) {
     return flow.syncStatus === 'modified' || flow.syncStatus === 'server_only';
@@ -39,7 +234,7 @@
 
   // Selected flows data (for sync dialog)
   const selectedFlows = $derived(
-    data.flows.filter(f => selectedFlowIds.has(f.flowId))
+    flows.filter(f => selectedFlowIds.has(f.flowId))
   );
 
   // Toggle selection of a single flow
@@ -147,9 +342,7 @@
     syncResult = null;
 
     if (hadSuccess) {
-      isRefreshing = true;
       await invalidateAll();
-      isRefreshing = false;
     }
   }
 
@@ -186,10 +379,6 @@
         throw new Error(result.errors[0].error);
       }
 
-      // Close dialog and refresh
-      showDeleteDialog = false;
-      flowToDelete = null;
-
       // Remove from selection if selected
       if (selectedFlowIds.has(flowToDelete?.flowId)) {
         const newSet = new Set(selectedFlowIds);
@@ -197,9 +386,11 @@
         selectedFlowIds = newSet;
       }
 
-      isRefreshing = true;
+      // Close dialog and refresh
+      showDeleteDialog = false;
+      flowToDelete = null;
+
       await invalidateAll();
-      isRefreshing = false;
 
     } catch (e) {
       deleteError = e.message || 'Failed to delete flow';
@@ -226,9 +417,6 @@
   let clearAppmixerCredentials = $state(false);
   let isSavingAppmixerSettings = $state(false);
   let appmixerSettingsError = $state('');
-
-  // Page loading state
-  let isRefreshing = $state(false);
 
   // Initialize GitHub settings form when dialog opens
   $effect(() => {
@@ -282,9 +470,7 @@
       }
 
       showGitHubSettingsDialog = false;
-      isRefreshing = true;
       await invalidateAll();
-      isRefreshing = false;
     } catch (e) {
       gitHubSettingsError = 'Failed to save settings';
     } finally {
@@ -311,9 +497,7 @@
         }
 
         showAppmixerSettingsDialog = false;
-        isRefreshing = true;
         await invalidateAll();
-        isRefreshing = false;
       } catch (e) {
         appmixerSettingsError = 'Failed to clear credentials';
       } finally {
@@ -348,9 +532,7 @@
       }
 
       showAppmixerSettingsDialog = false;
-      isRefreshing = true;
       await invalidateAll();
-      isRefreshing = false;
     } catch (e) {
       appmixerSettingsError = 'Failed to save settings';
     } finally {
@@ -360,11 +542,11 @@
 
   // Get unique connectors for filter dropdown
   const connectors = $derived(
-    [...new Set(data.flows.map(f => f.connector).filter(Boolean))].sort()
+    [...new Set(flows.map(f => f.connector).filter(Boolean))].sort()
   );
 
   const filteredFlows = $derived(
-    data.flows.filter(flow => {
+    flows.filter(flow => {
       const matchesSearch = !searchQuery ||
         flow.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
         flow.connector?.toLowerCase().includes(searchQuery.toLowerCase());
@@ -381,6 +563,27 @@
     })
   );
 
+  // Reset to page 1 when filters change
+  $effect(() => {
+    // Track all filter dependencies
+    searchQuery; connectorFilter; syncFilter; runningFilter;
+    currentPage = 1;
+  });
+
+  // Pagination
+  const totalPages = $derived(Math.max(1, Math.ceil(filteredFlows.length / PAGE_SIZE)));
+
+  // Clamp currentPage when totalPages shrinks (e.g. sync statuses resolve with a filter active)
+  $effect(() => {
+    if (currentPage > totalPages) {
+      currentPage = totalPages;
+    }
+  });
+
+  const paginatedFlows = $derived(
+    filteredFlows.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE)
+  );
+
   // Selectable flows from filtered list (must be after filteredFlows)
   const selectableFlows = $derived(
     filteredFlows.filter(isSelectable)
@@ -392,6 +595,17 @@
     selectableFlows.every(f => selectedFlowIds.has(f.flowId))
   );
 
+  // Visible page numbers (with ellipsis gaps)
+  const visiblePages = $derived(() => {
+    const pages = [];
+    for (let p = 1; p <= totalPages; p++) {
+      if (p === 1 || p === totalPages || (p >= currentPage - 2 && p <= currentPage + 2)) {
+        pages.push(p);
+      }
+    }
+    return pages;
+  });
+
   // Sync status configuration
   const syncStatusConfig = {
     match: { label: 'In Sync', class: 'bg-green-100 text-green-800 border-green-200', description: 'Flow matches the GitHub repository' },
@@ -401,33 +615,10 @@
   };
 </script>
 
-<style>
-  @keyframes indeterminate {
-    0% {
-      transform: translateX(-100%);
-    }
-    100% {
-      transform: translateX(400%);
-    }
-  }
-  .animate-indeterminate {
-    animation: indeterminate 1.5s ease-in-out infinite;
-  }
-</style>
-
 <svelte:head>
   <title>E2E Test Flows - Appmixer Sanity Check</title>
 </svelte:head>
 
-{#if isRefreshing}
-  <!-- Loading indicator (same as layout navigation) -->
-  <div class="flex flex-col items-center justify-center py-12 gap-4">
-    <div class="w-64 h-2 bg-secondary rounded-full overflow-hidden">
-      <div class="h-full w-1/4 bg-primary rounded-full animate-indeterminate"></div>
-    </div>
-    <span class="text-sm text-muted-foreground">Loading...</span>
-  </div>
-{:else}
 <div class="space-y-6">
   <!-- Header -->
   <div class="flex items-center justify-between">
@@ -483,69 +674,96 @@
     </div>
   {:else}
     <!-- Stats -->
-    <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4">
-      <button
-        type="button"
-        onclick={() => { syncFilter = ''; runningFilter = ''; }}
-        class="border rounded-lg p-4 text-left hover:bg-muted/50 transition-colors cursor-pointer {syncFilter === '' && runningFilter === '' ? 'ring-2 ring-primary' : ''}"
-      >
-        <div class="text-2xl font-bold">{data.stats.total}</div>
-        <div class="text-sm text-muted-foreground">Total Flows</div>
-      </button>
-      <button
-        type="button"
-        onclick={() => runningFilter = runningFilter === 'running' ? '' : 'running'}
-        class="border rounded-lg p-4 bg-emerald-50 text-left hover:bg-emerald-100 transition-colors cursor-pointer {runningFilter === 'running' ? 'ring-2 ring-emerald-500' : ''}"
-      >
-        <div class="text-2xl font-bold text-emerald-700">{data.stats.running}</div>
-        <div class="text-sm font-medium text-emerald-600">Running</div>
-        <div class="text-xs text-emerald-600/80 mt-1">Flow is currently running</div>
-      </button>
-      <button
-        type="button"
-        onclick={() => runningFilter = runningFilter === 'stopped' ? '' : 'stopped'}
-        class="border rounded-lg p-4 bg-gray-50 text-left hover:bg-gray-100 transition-colors cursor-pointer {runningFilter === 'stopped' ? 'ring-2 ring-gray-400' : ''}"
-      >
-        <div class="text-2xl font-bold text-gray-700">{data.stats.stopped}</div>
-        <div class="text-sm font-medium text-gray-600">Stopped</div>
-        <div class="text-xs text-gray-600/80 mt-1">Flow is not running</div>
-      </button>
-      <button
-        type="button"
-        onclick={() => syncFilter = syncFilter === 'match' ? '' : 'match'}
-        class="border rounded-lg p-4 bg-green-50 text-left hover:bg-green-100 transition-colors cursor-pointer {syncFilter === 'match' ? 'ring-2 ring-green-500' : ''}"
-      >
-        <div class="text-2xl font-bold text-green-700">{data.stats.match}</div>
-        <div class="text-sm font-medium text-green-600">In Sync</div>
-        <div class="text-xs text-green-600/80 mt-1">{syncStatusConfig.match.description}</div>
-      </button>
-      <button
-        type="button"
-        onclick={() => syncFilter = syncFilter === 'modified' ? '' : 'modified'}
-        class="border rounded-lg p-4 bg-yellow-50 text-left hover:bg-yellow-100 transition-colors cursor-pointer {syncFilter === 'modified' ? 'ring-2 ring-yellow-500' : ''}"
-      >
-        <div class="text-2xl font-bold text-yellow-700">{data.stats.modified}</div>
-        <div class="text-sm font-medium text-yellow-600">Modified</div>
-        <div class="text-xs text-yellow-600/80 mt-1">{syncStatusConfig.modified.description}</div>
-      </button>
-      <button
-        type="button"
-        onclick={() => syncFilter = syncFilter === 'server_only' ? '' : 'server_only'}
-        class="border rounded-lg p-4 bg-blue-50 text-left hover:bg-blue-100 transition-colors cursor-pointer {syncFilter === 'server_only' ? 'ring-2 ring-blue-500' : ''}"
-      >
-        <div class="text-2xl font-bold text-blue-700">{data.stats.serverOnly}</div>
-        <div class="text-sm font-medium text-blue-600">Server Only</div>
-        <div class="text-xs text-blue-600/80 mt-1">{syncStatusConfig.server_only.description}</div>
-      </button>
-      <button
-        type="button"
-        onclick={() => syncFilter = syncFilter === 'error' ? '' : 'error'}
-        class="border rounded-lg p-4 bg-red-50 text-left hover:bg-red-100 transition-colors cursor-pointer {syncFilter === 'error' ? 'ring-2 ring-red-500' : ''}"
-      >
-        <div class="text-2xl font-bold text-red-700">{data.stats.error}</div>
-        <div class="text-sm font-medium text-red-600">Errors</div>
-        <div class="text-xs text-red-600/80 mt-1">{syncStatusConfig.error.description}</div>
-      </button>
+    <div class="flex flex-col lg:flex-row gap-4">
+      <!-- Flow Status -->
+      <div class="space-y-2">
+        <h3 class="text-xs font-medium text-muted-foreground uppercase tracking-wider">Flow Status</h3>
+        <div class="grid grid-cols-3 gap-3">
+          <button
+            type="button"
+            onclick={() => { syncFilter = ''; runningFilter = ''; }}
+            class="border rounded-lg p-4 text-left hover:bg-muted/50 transition-colors cursor-pointer {syncFilter === '' && runningFilter === '' ? 'ring-2 ring-primary' : ''}"
+          >
+            <div class="text-2xl font-bold">{stats.total}</div>
+            <div class="text-sm text-muted-foreground">Total</div>
+          </button>
+          <button
+            type="button"
+            onclick={() => runningFilter = runningFilter === 'running' ? '' : 'running'}
+            class="border rounded-lg p-4 bg-emerald-50 text-left hover:bg-emerald-100 transition-colors cursor-pointer {runningFilter === 'running' ? 'ring-2 ring-emerald-500' : ''}"
+          >
+            <div class="text-2xl font-bold text-emerald-700">{stats.running}</div>
+            <div class="text-sm font-medium text-emerald-600">Running</div>
+          </button>
+          <button
+            type="button"
+            onclick={() => runningFilter = runningFilter === 'stopped' ? '' : 'stopped'}
+            class="border rounded-lg p-4 bg-gray-50 text-left hover:bg-gray-100 transition-colors cursor-pointer {runningFilter === 'stopped' ? 'ring-2 ring-gray-400' : ''}"
+          >
+            <div class="text-2xl font-bold text-gray-700">{stats.stopped}</div>
+            <div class="text-sm font-medium text-gray-600">Stopped</div>
+          </button>
+        </div>
+      </div>
+
+      <!-- Divider -->
+      <div class="hidden lg:block w-px bg-border self-stretch"></div>
+      <div class="lg:hidden h-px bg-border"></div>
+
+      <!-- GitHub Sync -->
+      <div class="space-y-2 flex-1">
+        <h3 class="text-xs font-medium text-muted-foreground uppercase tracking-wider">GitHub Sync</h3>
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+          <button
+            type="button"
+            onclick={() => syncFilter = syncFilter === 'match' ? '' : 'match'}
+            class="border rounded-lg p-4 bg-green-50 text-left hover:bg-green-100 transition-colors cursor-pointer {syncFilter === 'match' ? 'ring-2 ring-green-500' : ''}"
+          >
+            {#if syncStatusLoading}
+              <div class="text-2xl font-bold text-green-700/50">...</div>
+            {:else}
+              <div class="text-2xl font-bold text-green-700">{stats.match}</div>
+            {/if}
+            <div class="text-sm font-medium text-green-600">In Sync</div>
+          </button>
+          <button
+            type="button"
+            onclick={() => syncFilter = syncFilter === 'modified' ? '' : 'modified'}
+            class="border rounded-lg p-4 bg-yellow-50 text-left hover:bg-yellow-100 transition-colors cursor-pointer {syncFilter === 'modified' ? 'ring-2 ring-yellow-500' : ''}"
+          >
+            {#if syncStatusLoading}
+              <div class="text-2xl font-bold text-yellow-700/50">...</div>
+            {:else}
+              <div class="text-2xl font-bold text-yellow-700">{stats.modified}</div>
+            {/if}
+            <div class="text-sm font-medium text-yellow-600">Modified</div>
+          </button>
+          <button
+            type="button"
+            onclick={() => syncFilter = syncFilter === 'server_only' ? '' : 'server_only'}
+            class="border rounded-lg p-4 bg-blue-50 text-left hover:bg-blue-100 transition-colors cursor-pointer {syncFilter === 'server_only' ? 'ring-2 ring-blue-500' : ''}"
+          >
+            {#if syncStatusLoading}
+              <div class="text-2xl font-bold text-blue-700/50">...</div>
+            {:else}
+              <div class="text-2xl font-bold text-blue-700">{stats.serverOnly}</div>
+            {/if}
+            <div class="text-sm font-medium text-blue-600">Server Only</div>
+          </button>
+          <button
+            type="button"
+            onclick={() => syncFilter = syncFilter === 'error' ? '' : 'error'}
+            class="border rounded-lg p-4 bg-red-50 text-left hover:bg-red-100 transition-colors cursor-pointer {syncFilter === 'error' ? 'ring-2 ring-red-500' : ''}"
+          >
+            {#if syncStatusLoading}
+              <div class="text-2xl font-bold text-red-700/50">...</div>
+            {:else}
+              <div class="text-2xl font-bold text-red-700">{stats.error}</div>
+            {/if}
+            <div class="text-sm font-medium text-red-600">Errors</div>
+          </button>
+        </div>
+      </div>
     </div>
 
     <!-- Filters -->
@@ -583,11 +801,26 @@
         <option value="server_only">Server Only</option>
         <option value="error">Error</option>
       </select>
+      {#if searchQuery || connectorFilter || syncFilter || runningFilter}
+        <Button
+          variant="ghost"
+          size="sm"
+          onclick={() => { searchQuery = ''; connectorFilter = ''; syncFilter = ''; runningFilter = ''; }}
+        >
+          Clear filters
+        </Button>
+      {/if}
     </div>
 
     <!-- Results count -->
     <p class="text-sm text-muted-foreground">
-      Showing {filteredFlows.length} of {data.flows.length} flows
+      Showing {Math.min((currentPage - 1) * PAGE_SIZE + 1, filteredFlows.length)}–{Math.min(currentPage * PAGE_SIZE, filteredFlows.length)} of {filteredFlows.length} flows
+      {#if filteredFlows.length !== flows.length}
+        <span class="text-muted-foreground/60">(filtered from {flows.length})</span>
+      {/if}
+      {#if syncStatusLoading}
+        <span class="ml-2 text-muted-foreground/60">— Loading sync statuses...</span>
+      {/if}
     </p>
 
     <!-- Flows Table -->
@@ -616,7 +849,7 @@
           </TableRow>
         </TableHeader>
         <TableBody>
-          {#each filteredFlows as flow (flow.flowId)}
+          {#each paginatedFlows as flow (flow.flowId)}
             {@const selectable = isSelectable(flow)}
             <TableRow class={selectedFlowIds.has(flow.flowId) ? 'bg-muted/50' : ''}>
               <TableCell>
@@ -650,37 +883,74 @@
                 {/if}
               </TableCell>
               <TableCell>
-                {@const config = syncStatusConfig[flow.syncStatus] || syncStatusConfig.error}
-                <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border {config.class}">
-                  {config.label}
-                </span>
+                {#if flow.syncStatus === null}
+                  <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border bg-muted text-muted-foreground border-border animate-pulse">
+                    Loading...
+                  </span>
+                {:else}
+                  {@const config = syncStatusConfig[flow.syncStatus] || syncStatusConfig.error}
+                  <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border {config.class}">
+                    {config.label}
+                  </span>
+                {/if}
               </TableCell>
               <TableCell>
-                <div class="flex gap-3">
+                <div class="flex items-center gap-1">
                   <a
                     href={flow.url}
                     target="_blank"
                     rel="noopener noreferrer"
-                    class="text-blue-600 hover:underline text-sm"
+                    class="inline-flex items-center justify-center rounded-md p-1.5 text-blue-600 hover:bg-blue-50 transition-colors"
+                    title="Open in Designer"
                   >
-                    Designer
+                    <ExternalLink size={15} />
                   </a>
                   {#if flow.githubUrl}
                     <a
                       href={flow.githubUrl}
                       target="_blank"
                       rel="noopener noreferrer"
-                      class="text-gray-600 hover:underline text-sm"
+                      class="inline-flex items-center justify-center rounded-md p-1.5 text-gray-600 hover:bg-gray-100 transition-colors"
+                      title="View on GitHub"
                     >
-                      GitHub
+                      <Github size={15} />
                     </a>
+                  {/if}
+                  {#if flow.syncStatus === 'modified'}
+                    <button
+                      type="button"
+                      onclick={() => openDiff(flow)}
+                      class="inline-flex items-center justify-center rounded-md p-1.5 text-yellow-600 hover:bg-yellow-50 transition-colors"
+                      title="View changes"
+                    >
+                      <FileDiff size={15} />
+                    </button>
                   {/if}
                   <button
                     type="button"
-                    onclick={() => confirmDelete(flow)}
-                    class="text-red-600 hover:underline text-sm"
+                    onclick={() => toggleFlow(flow)}
+                    disabled={togglingFlowIds.has(flow.flowId)}
+                    class="inline-flex items-center justify-center rounded-md p-1.5 transition-colors {flow.running ? 'text-amber-600 hover:bg-amber-50' : 'text-emerald-600 hover:bg-emerald-50'} disabled:opacity-50 disabled:pointer-events-none"
+                    title={flow.running ? 'Stop flow' : 'Start flow'}
                   >
-                    Remove
+                    {#if togglingFlowIds.has(flow.flowId)}
+                      <svg class="animate-spin h-[15px] w-[15px]" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                      </svg>
+                    {:else if flow.running}
+                      <Square size={15} />
+                    {:else}
+                      <Play size={15} />
+                    {/if}
+                  </button>
+                  <button
+                    type="button"
+                    onclick={() => confirmDelete(flow)}
+                    class="inline-flex items-center justify-center rounded-md p-1.5 text-red-600 hover:bg-red-50 transition-colors"
+                    title="Remove from Appmixer"
+                  >
+                    <Trash2 size={15} />
                   </button>
                 </div>
               </TableCell>
@@ -688,6 +958,61 @@
           {/each}
         </TableBody>
       </Table>
+    {/if}
+
+    <!-- Pagination -->
+    {#if totalPages > 1}
+      <div class="flex items-center justify-between">
+        <p class="text-sm text-muted-foreground">
+          Page {currentPage} of {totalPages}
+        </p>
+        <div class="flex items-center gap-1">
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={currentPage === 1}
+            onclick={() => currentPage = 1}
+          >
+            First
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={currentPage === 1}
+            onclick={() => currentPage--}
+          >
+            Previous
+          </Button>
+          {#each visiblePages() as page, idx}
+            {#if idx > 0 && page - visiblePages()[idx - 1] > 1}
+              <span class="px-1 text-muted-foreground text-sm">...</span>
+            {/if}
+            <Button
+              variant={page === currentPage ? 'default' : 'outline'}
+              size="sm"
+              onclick={() => currentPage = page}
+            >
+              {page}
+            </Button>
+          {/each}
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={currentPage === totalPages}
+            onclick={() => currentPage++}
+          >
+            Next
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={currentPage === totalPages}
+            onclick={() => currentPage = totalPages}
+          >
+            Last
+          </Button>
+        </div>
+      </div>
     {/if}
 
     <!-- Floating Action Bar -->
@@ -707,7 +1032,6 @@
     {/if}
   {/if}
 </div>
-{/if}
 
 <!-- GitHub Settings Dialog -->
 <Dialog bind:open={showGitHubSettingsDialog}>
@@ -1085,6 +1409,62 @@
           Remove Flow
         {/if}
       </Button>
+    </DialogFooter>
+  </DialogContent>
+</Dialog>
+
+<!-- Diff Dialog -->
+<Dialog bind:open={showDiffDialog}>
+  <DialogContent class="max-w-5xl max-h-[85vh] flex flex-col">
+    <DialogHeader>
+      <DialogTitle>Flow Changes</DialogTitle>
+      <DialogDescription>
+        {#if diffFlow}
+          Comparing <span class="font-medium">{diffFlow.name}</span> — instance vs GitHub
+          {#if diffData?.githubPath}
+            <span class="text-muted-foreground">({diffData.githubPath})</span>
+          {/if}
+        {/if}
+      </DialogDescription>
+    </DialogHeader>
+
+    {#if isDiffLoading}
+      <div class="flex items-center justify-center py-12">
+        <svg class="animate-spin h-6 w-6 text-muted-foreground" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+          <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+          <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+        </svg>
+        <span class="ml-2 text-sm text-muted-foreground">Loading diff...</span>
+      </div>
+    {:else if diffError}
+      <div class="bg-red-50 border border-red-200 rounded-lg p-4">
+        <p class="text-red-700 text-sm">{diffError}</p>
+      </div>
+    {:else if diffData}
+      {@const lines = computeDiff(diffData.github, diffData.server)}
+      {@const added = lines.filter(l => l.type === 'added').length}
+      {@const removed = lines.filter(l => l.type === 'removed').length}
+      <div class="flex items-center gap-3 text-xs text-muted-foreground pb-2 border-b">
+        <span class="text-green-700 font-medium">+{added} added</span>
+        <span class="text-red-700 font-medium">-{removed} removed</span>
+        <span>{lines.filter(l => l.type === 'context').length} unchanged</span>
+      </div>
+      <div class="overflow-auto flex-1 min-h-0 border rounded-md bg-muted/30">
+        <table class="w-full text-xs font-mono leading-5">
+          {#each lines as line}
+            <tr class={line.type === 'added' ? 'bg-green-50' : line.type === 'removed' ? 'bg-red-50' : 'hover:bg-muted/50'}>
+              <td class="w-6 text-center select-none {line.type === 'added' ? 'text-green-600 bg-green-100' : line.type === 'removed' ? 'text-red-600 bg-red-100' : 'text-muted-foreground'}">
+                {line.type === 'added' ? '+' : line.type === 'removed' ? '-' : ''}
+              </td>
+              <td class="px-3 whitespace-pre {line.type === 'added' ? 'text-green-900' : line.type === 'removed' ? 'text-red-900' : ''}">{line.line}</td>
+            </tr>
+          {/each}
+        </table>
+      </div>
+    {/if}
+
+    <DialogFooter>
+      <Button variant="outline" onclick={() => showDiffDialog = false}>Close</Button>
     </DialogFooter>
   </DialogContent>
 </Dialog>

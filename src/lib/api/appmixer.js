@@ -225,6 +225,59 @@ export async function deleteFlow(userId, flowId) {
 }
 
 /**
+ * Start a flow
+ * @param {string} userId - User ID (email)
+ * @param {string} flowId - Flow ID to start
+ * @returns {Promise<void>}
+ */
+export async function startFlow(userId, flowId) {
+    const config = await getAppmixerConfig(userId);
+    const token = await getAccessToken(userId);
+    const response = await fetch(
+        `${config.baseUrl}/flows/${flowId}/coordinator`,
+        {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ command: 'start' })
+        }
+    );
+
+    console.log(response.status, response.statusText, await response.text() || '(empty response body)')
+    if (!response.ok) {
+        throw new Error(`Failed to start flow ${flowId}: ${response.status}`);
+    }
+}
+
+/**
+ * Stop a flow
+ * @param {string} userId - User ID (email)
+ * @param {string} flowId - Flow ID to stop
+ * @returns {Promise<void>}
+ */
+export async function stopFlow(userId, flowId) {
+    const config = await getAppmixerConfig(userId);
+    const token = await getAccessToken(userId);
+    const response = await fetch(
+        `${config.baseUrl}/flows/${flowId}/coordinator`,
+        {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ command: 'stop' })
+        }
+    );
+
+    if (!response.ok) {
+        throw new Error(`Failed to stop flow ${flowId}: ${response.status}`);
+    }
+}
+
+/**
  * Get Appmixer instance info (safe for client exposure)
  * @param {string} userId - User ID (email)
  * @returns {Promise<{baseUrl: string, username: string, hasEnvCredentials: boolean, hasCustomCredentials: boolean}>}
